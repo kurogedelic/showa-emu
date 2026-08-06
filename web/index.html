@@ -24,13 +24,61 @@
     -webkit-user-select: none;
     user-select: none;
   }
+  /* 3x3 スクロールレイアウト: 中央=画面 / 上=ツールバー / 下=端子 / 左右=デバッグ
+     周辺パネルは画面外に置き、スクロール(スワイプ)で四方から引き出す */
   #app {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: max-content 100% max-content;
+    grid-template-rows: max-content 100% max-content;
+    grid-template-areas:
+      ".    top    ."
+      "left center right"
+      ".    bottom .";
     height: 100%;
     background: #111;
+    overflow: auto;
+    scroll-snap-type: both proximity;
+    overscroll-behavior: contain;
+    touch-action: pan-x pan-y;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
+  #app::-webkit-scrollbar { width: 0; height: 0; }
   #app:fullscreen { background: #000; }
+  #stage {
+    grid-area: center;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    background: #111;
+    scroll-snap-align: center center;
+  }
+  /* 各パネルのスナップ位置 (block, inline) */
+  #toolbar    { grid-area: top;    scroll-snap-align: start start; }
+  #cartbus    { grid-area: bottom; scroll-snap-align: end start; }
+  #debug-left { grid-area: left;   scroll-snap-align: center start; }
+  #debug      { grid-area: right;  scroll-snap-align: center end; }
+  /* 端に隠れているパネルを示すタブ (タップで1段スクロール) */
+  .edge-hint {
+    display: none;
+    position: fixed;
+    z-index: 30;
+    background: rgba(143, 35, 35, 0.75);
+    color: var(--fc-cream);
+    border: none;
+    font-size: 10px;
+    line-height: 1;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 4px 12px;
+  }
+  .edge-hint.on { display: block; }
+  #hint-up    { top: 0;  left: 50%; transform: translateX(-50%); border-radius: 0 0 8px 8px; }
+  #hint-down  { bottom: 0; right: 6px; border-radius: 8px 8px 0 0; }
+  #hint-left  { left: 0;  top: 50%; transform: translateY(-50%); border-radius: 0 8px 8px 0; padding: 12px 4px; }
+  #hint-right { right: 0; top: 50%; transform: translateY(-50%); border-radius: 8px 0 0 8px; padding: 12px 4px; }
   #toolbar {
     display: flex;
     gap: 8px;
@@ -126,7 +174,7 @@
   #cartbus {
     display: none;
     background: #211d18;
-    border-bottom: 4px solid var(--fc-red);
+    border-top: 4px solid var(--fc-red);
     padding: 4px 8px 2px;
     overflow-x: auto;
     flex-shrink: 0;
@@ -609,8 +657,8 @@
   }
   #debug {
     display: none;
-    width: min(370px, 40vw);
-    max-height: 100%;
+    width: min(370px, 60vw);
+    height: 100%;
     flex-shrink: 0;
     overflow: auto;
     background: #161616;
@@ -700,8 +748,8 @@
   body.debug-on #debug { display: block; }
   #debug-left {
     display: none;
-    width: min(276px, 25vw);
-    max-height: 100%;
+    width: min(276px, 50vw);
+    height: 100%;
     flex-shrink: 0;
     overflow: auto;
     background: #161616;
@@ -731,6 +779,180 @@
     height: 100%;
     object-fit: contain;
   }
+  /* 3D モード: 中央ステージを Three.js のキャンバスに差し替える */
+  #room-canvas {
+    display: none;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+  }
+  body.room-on #room-canvas { display: block; }
+  #screen-wrap { position: relative; }
+  /* 3D パラメータ HUD */
+  #room-hud {
+    display: none;
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 4;
+    width: 208px;
+    background: rgba(16, 20, 8, 0.78);
+    border: 1px solid #3a4a20;
+    border-radius: 6px;
+    padding: 6px 8px 7px;
+    font-family: ui-monospace, Menlo, monospace;
+    color: #9fdf6f;
+    backdrop-filter: blur(3px);
+  }
+  body.room-on #room-hud.on { display: block; }
+  /* テレビにホバーするまでは小さなヒントだけ出しておく */
+  #hud-peek {
+    display: none;
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 3;
+    padding: 3px 7px;
+    border-radius: 4px;
+    background: rgba(16, 20, 8, 0.55);
+    border: 1px solid #3a4a20;
+    color: #7fae5f;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 9px;
+    pointer-events: none;
+  }
+  body.room-on #hud-peek { display: block; }
+  body.room-on #room-hud.on ~ #hud-peek { display: none; }
+  #hud-head { display: flex; align-items: center; justify-content: space-between; }
+  #hud-title { font-size: 11px; font-weight: bold; color: #d3ff9f; }
+  #hud-toggle {
+    background: none;
+    border: 1px solid #3a4a20;
+    border-radius: 3px;
+    color: #9fdf6f;
+    font: inherit;
+    font-size: 11px;
+    line-height: 1;
+    padding: 1px 6px;
+    cursor: pointer;
+  }
+  #room-hud.collapsed #hud-body { display: none; }
+  .hud-row { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
+  .hud-row > span:first-child { width: 74px; flex-shrink: 0; font-size: 9px; }
+  .hud-row input[type=range] {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 12px;
+    accent-color: #6fdc6f;
+    cursor: pointer;
+  }
+  .hud-val { width: 32px; flex-shrink: 0; font-size: 9px; text-align: right; color: #d3ff9f; }
+  .hud-check {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 6px;
+    font-size: 9px;
+    cursor: pointer;
+  }
+  .hud-check input { accent-color: #6fdc6f; margin: 0; }
+  .hud-btn {
+    width: 100%;
+    margin-top: 6px;
+    background: rgba(143, 35, 35, 0.55);
+    border: 1px solid #6b2a2a;
+    border-radius: 4px;
+    color: #ffd9d9;
+    font: inherit;
+    font-size: 10px;
+    padding: 4px 6px;
+    cursor: pointer;
+  }
+  .hud-btn-row { display: flex; gap: 4px; }
+  .hud-btn-row .hud-btn-s { width: auto; flex: 1 1 0; font-size: 12px; padding: 3px 0; }
+  .hud-btn.on {
+    background: rgba(60, 90, 30, 0.5);
+    border-color: #3a4a20;
+    color: #d3ff9f;
+  }
+  /* カセットにホバーしたときの傾きゲージ */
+  #cart-hud {
+    display: none;
+    position: absolute;
+    z-index: 6;
+    width: 172px;
+    background: rgba(16, 20, 8, 0.86);
+    border: 1px solid #3a4a20;
+    border-radius: 6px;
+    padding: 7px 8px 8px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    color: #9fdf6f;
+    pointer-events: none;
+    backdrop-filter: blur(3px);
+  }
+  #cart-hud.on { display: block; }
+  .ch-row { display: flex; justify-content: space-between; align-items: baseline; }
+  #ch-deg { font-size: 13px; font-weight: bold; color: #d3ff9f; }
+  #ch-gauge {
+    position: relative;
+    height: 10px;
+    margin: 6px 0 5px;
+    border-radius: 5px;
+    background: linear-gradient(90deg,
+      #b03030 0%, #c08a30 22%, #4aa84a 46%, #4aa84a 54%, #c08a30 78%, #b03030 100%);
+  }
+  #ch-center {
+    position: absolute;
+    left: 50%; top: -2px;
+    width: 1px; height: 14px;
+    background: rgba(255,255,255,0.5);
+  }
+  #ch-needle {
+    position: absolute;
+    top: -3px;
+    width: 3px; height: 16px;
+    margin-left: -1.5px;
+    background: #fff;
+    border-radius: 2px;
+    box-shadow: 0 0 4px rgba(0,0,0,0.8);
+    transition: left 0.05s linear;
+  }
+  #ch-ins-track {
+    height: 6px;
+    margin: 3px 0 5px;
+    border-radius: 3px;
+    background: #23301a;
+    overflow: hidden;
+  }
+  #ch-ins-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #4aa84a, #9fdf6f);
+    transition: width 0.05s linear;
+  }
+  #ch-pins {
+    display: flex;
+    gap: 1px;
+    margin: 5px 0 6px;
+    height: 12px;
+  }
+  #ch-pins i {
+    flex: 1 1 0;
+    border-radius: 1px;
+    background: linear-gradient(#E5C877, #B8923C);
+  }
+  #ch-pins i.weak { background: #6e5418; box-shadow: inset 0 0 0 1px #E0A030; }
+  #ch-pins i.off { background: #2a1010; box-shadow: inset 0 0 0 1px #E05555; }
+  #ch-hint { color: #6f8a4a; font-size: 9px; }
+  #hud-read {
+    margin-top: 6px;
+    font-size: 9px;
+    line-height: 1.5;
+    color: #85a55a;
+    white-space: pre;
+  }
+  body.room-on canvas#screen { display: none; }
+  body.room-on #btn-room { background: #2e7d32; box-shadow: 0 2px 0 #1b4d1e; }
   /* virtual pad */
   #pad {
     display: none;
@@ -801,6 +1023,7 @@
     <button id="btn-reset">リセット</button>
     <button id="btn-swap">カセット入替</button>
     <button id="btn-mute">🔊</button>
+    <button id="btn-room">3D</button>
     <button id="btn-debug">DEBUG</button>
     <button id="btn-bus">端子</button>
     <button id="btn-xev" hidden>XEVIOUS判定</button>
@@ -889,13 +1112,70 @@
       <div id="cart-note">傾けると端子の接触が浮いた側から不安定になります(点滅=接触不良気味、黒=断線)。「挿し直す」で全ピン復旧。</div>
     </div>
   </div>
-  <div id="screen-wrap">
-    <div id="debug-left">
-      <h3 id="chr-title">CGROM (CHR) — pal 0 [click]</h3>
-      <canvas id="chr-canvas" width="128" height="256" title="クリックでパレット切替"></canvas>
+  <div id="debug-left">
+    <h3 id="chr-title">CGROM (CHR) — pal 0 [click]</h3>
+    <canvas id="chr-canvas" width="128" height="256" title="クリックでパレット切替"></canvas>
+  </div>
+  <div id="stage">
+    <div id="screen-wrap">
+      <canvas id="screen" width="256" height="240"></canvas>
+      <div id="cart-hud">
+        <div class="ch-row"><span id="ch-title">カセットの傾き</span><span id="ch-deg">0.0°</span></div>
+        <div id="ch-gauge"><div id="ch-center"></div><div id="ch-needle"></div></div>
+        <div class="ch-row"><span id="ch-ins">差し込み 100%</span></div>
+        <div id="ch-ins-track"><div id="ch-ins-bar"></div></div>
+        <div class="ch-row"><span id="ch-contact">接点 60/60</span></div>
+        <div id="ch-pins"></div>
+        <div id="ch-hint">左右=傾ける / 上下=抜き差し</div>
+      </div>
+      <div id="room-hud">
+        <div id="hud-head"><span id="hud-title">3D パラメータ</span><button id="hud-toggle">−</button></div>
+        <div id="hud-body">
+          <div class="hud-row">
+            <span id="lbl-light">部屋の明るさ</span>
+            <input type="range" id="room-light" min="0" max="200" step="1" value="100">
+            <span class="hud-val" id="light-val">100%</span>
+          </div>
+          <div class="hud-row">
+            <span id="lbl-uhf">UHF感度</span>
+            <input type="range" id="uhf-gain" min="0" max="100" step="1" value="100">
+            <span class="hud-val" id="uhf-val">100%</span>
+          </div>
+          <div class="hud-row">
+            <span id="lbl-tune">同調</span>
+            <input type="range" id="rf-tune" min="-100" max="100" step="1" value="0">
+            <span class="hud-val" id="tune-val">0.00</span>
+          </div>
+          <div class="hud-row">
+            <span id="lbl-crt">CRTエフェクト</span>
+            <input type="range" id="crt-amount" min="0" max="100" step="1" value="100">
+            <span class="hud-val" id="crt-val">100%</span>
+          </div>
+          <label class="hud-check"><input type="checkbox" id="osd-on" checked><span id="lbl-osd">OSD</span></label>
+          <button id="hud-mute" class="hud-btn">🔇 <span id="lbl-mute">ミュート</span></button>
+          <button id="hud-phys" class="hud-btn">🌀 <span id="lbl-phys">ぶん投げ</span></button>
+          <button id="hud-reset" class="hud-btn">🧹 <span id="lbl-tidy">片付ける</span></button>
+          <div class="hud-btn-row">
+            <button id="hud-roach" class="hud-btn hud-btn-s" title="ゴキブリ">🪳</button>
+            <button id="hud-leak" class="hud-btn hud-btn-s" title="雨漏り">💧</button>
+            <button id="hud-can" class="hud-btn hud-btn-s" title="ジュース">🥤</button>
+          </div>
+          <div id="hud-read"></div>
+        </div>
+      </div>
     </div>
-    <canvas id="screen" width="256" height="240"></canvas>
-    <div id="debug">
+    <div id="pad">
+      <div class="pbtn" id="btn-up" data-bit="16">▲</div>
+      <div class="pbtn" id="btn-down" data-bit="32">▼</div>
+      <div class="pbtn" id="btn-left" data-bit="64">◀</div>
+      <div class="pbtn" id="btn-right" data-bit="128">▶</div>
+      <div class="pbtn" id="btn-b" data-bit="2">B</div>
+      <div class="pbtn" id="btn-a" data-bit="1">A</div>
+      <div class="pbtn" id="btn-select" data-bit="4">SELECT</div>
+      <div class="pbtn" id="btn-start" data-bit="8">START</div>
+    </div>
+  </div>
+  <div id="debug">
       <h3 id="h-cpu">CPU レジスタ</h3>
       <div id="dbg-cpu"></div>
       <div id="dbg-disasm"></div>
@@ -917,19 +1197,12 @@
       <div id="dbg-apu"></div>
       <h3 id="h-wram">WRAM $0000-$07FF (ダブルクリックで編集)</h3>
       <div id="dbg-wram"></div>
-    </div>
-  </div>
-  <div id="pad">
-    <div class="pbtn" id="btn-up" data-bit="16">▲</div>
-    <div class="pbtn" id="btn-down" data-bit="32">▼</div>
-    <div class="pbtn" id="btn-left" data-bit="64">◀</div>
-    <div class="pbtn" id="btn-right" data-bit="128">▶</div>
-    <div class="pbtn" id="btn-b" data-bit="2">B</div>
-    <div class="pbtn" id="btn-a" data-bit="1">A</div>
-    <div class="pbtn" id="btn-select" data-bit="4">SELECT</div>
-    <div class="pbtn" id="btn-start" data-bit="8">START</div>
   </div>
 </div>
+<button class="edge-hint" id="hint-up" title="上のパネル">▲</button>
+<button class="edge-hint" id="hint-down" title="下のパネル">▼</button>
+<button class="edge-hint" id="hint-left" title="左のパネル">◀</button>
+<button class="edge-hint" id="hint-right" title="右のパネル">▶</button>
 <div id="probe-scope">
   <div id="probe-label"></div>
   <canvas id="probe-canvas" width="256" height="80"></canvas>
@@ -971,6 +1244,11 @@ PRGとCHRを別のカセットから組み合わせた「ニコイチカセッ�
 <script>window.NES_VER='1784862731';</script>
 <script src="i18n.js?v=1784862731"></script>
 <script src="smb-ram.js?v=1784862731"></script>
+<script src="layout.js?v=1784862731"></script>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/jsm/" } }
+</script>
+<script type="module" src="room.js?v=1784862731"></script>
 <script src="nes.js?v=1784862731"></script>
 <script src="main.js?v=1784862731"></script>
 </body>

@@ -2,3 +2,7 @@ node_modules/
 dist/
 *.nes
 *.fm2
+
+# 同梱するデフォルト ROM (作者自身の作品) は除外しない
+!web/assets/roms/*.nes
+.DS_Store

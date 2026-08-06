@@ -89,7 +89,19 @@
     set('btn-settings', 'settingsBtn');
     set('settings-title', 'settingsTitle');
     set('lbl-master', 'masterVol');
+
     set('settings-note', 'settingsNote');
+    set('hud-title', 'hud3d');
+    set('lbl-light', 'roomLight');
+    set('lbl-uhf', 'uhfGain');
+    set('lbl-tune', 'rfTune');
+    set('lbl-mute', 'muteLabel');
+    set('ch-title', 'cartTiltTitle');
+    set('ch-hint', 'dragHint');
+    set('lbl-phys', 'physLabel');
+    set('lbl-tidy', 'tidyLabel');
+    set('lbl-osd', 'osdLabel');
+    set('lbl-crt', 'crtFx');
     set('settings-close', 'close');
     set('swap-close', 'close');
     set('check-close', 'close');
@@ -872,14 +884,20 @@
   // --- half-insertion model: tilting lifts one side of the edge connector ---
   // column 0..29 across the connector; both rows share the column
   const pinColumn = (pin) => (pin <= 30 ? pin - 1 : pin - 31);
+  // 差し込み具合 0 = 抜けている .. 1 = 奥まで挿さっている (3D 側から操作する)
+  let insertion = 1;
   function contactQuality(col) {   // 1 = solid, 0 = no contact
-    if (tilt === 0) return 1;
+    // 抜けかけていると全ピンが等しく弱くなる (25% 以下は完全に非接触)
+    const seat = insertion >= 0.75 ? 1
+      : (insertion <= 0.25 ? 0 : (insertion - 0.25) / 0.5);
+    if (seat === 0) return 0;
+    if (tilt === 0) return seat;
     const x = (col / 29) * 2 - 1;              // -1 (left) .. +1 (right)
     // clockwise (右回り, tilt>0) about the bottom-center pivot lifts the LEFT side
     const lift = (tilt / TILT_MAX) * -x;
-    if (lift <= 0.15) return 1;
+    if (lift <= 0.15) return seat;
     if (lift >= 0.6) return 0;
-    return 1 - (lift - 0.15) / 0.45;
+    return seat * (1 - (lift - 0.15) / 0.45);
   }
   // roll the dice for flaky pins — called every frame while tilted
   function applyContacts() {
@@ -920,6 +938,20 @@
     updateBusUI(true);
   }
   cartSlider.addEventListener('input', () => setTilt(parseFloat(cartSlider.value)));
+
+  // 3D (room.js) 用の口。カセットの抜き差しと傾きをここから触る
+  window.NES_CART = {
+    setInsertion(v) {
+      const nv = Math.max(0, Math.min(1, v));
+      if (nv === insertion) return;
+      insertion = nv;
+      applyContacts();
+      updateBusUI(true);
+    },
+    getInsertion: () => insertion,
+    setTilt,
+    getTilt: () => tilt,
+  };
 
   // ---- variable clock: 1 Hz .. 1.79 MHz (log slider + Hz input box) ----
   const NES_CLOCK = 1789773;
@@ -1677,9 +1709,8 @@ NOP*:1A imp,3A imp,5A imp,7A imp,DA imp,FA imp,80 imm,82 imm,89 imm,C2 imm,E2 im
       refreshMaster();
     }
     const romQ = qs.get('rom');
-    // ROM未指定時は既定のゲームを起動
-    const DEFAULT_ROM_URL =
-      'https://raw.githubusercontent.com/GOROman/calude-famicom-game/main/game.nes';
+    // ROM未指定時は同梱の既定ゲームを起動 (kurogedelic 作「信長」)
+    const DEFAULT_ROM_URL = 'assets/roms/nobunaga.nes';
     loadRomFromUrl(romQ || DEFAULT_ROM_URL);
   }
   applyLanguage();
