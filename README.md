@@ -1,10 +1,10 @@
-# cluade-famicom-emu — Reality
+# showa-emu
 
-A fork of [GOROman/cluade-famicom-emu](https://github.com/GOROman/cluade-famicom-emu) that puts the
-emulator inside a **3D room**: a CRT television on a stand in a six-mat tatami room, with a Famicom,
-an RF switch box, cables you can actually unplug, and physics.
+A Famicom emulator that runs inside a **Shōwa-era living room**: a CRT television on a stand in a
+six-mat tatami room, with a console, an RF switch box, cables you can actually unplug, and physics.
+Forked from [GOROman/cluade-famicom-emu](https://github.com/GOROman/cluade-famicom-emu).
 
-**▶ Play: https://kurogedelic.github.io/cluade-famicom-emu_reality/**
+**▶ Play: https://kurogedelic.github.io/showa-emu/**
 
 It boots straight into *nobunaga.nes*, an original game by [kurogedelic](https://github.com/kurogedelic),
 bundled in this repo. Use **Open ROM** in the toolbar to load your own `.nes` file.
@@ -25,17 +25,20 @@ bundled in this repo. Use **Open ROM** in the toolbar to load your own `.nes` fi
   Drag it up to unseat it and the contacts drop out one by one; drag sideways to tilt it.
 - **Physics** (cannon-es). Grab and throw the television, the stand, the console. Knocks make the
   picture warp and settle; a knock to the console makes the contacts bounce and the game glitch.
-- **Room props.** A cockroach that scuttles out (one more per click), a ceiling leak, and a can of
-  orange soda you can knock over — the puddle reaching the console gums up the contacts.
+- **Room props.** Cockroaches that scuttle across the floor *and up the walls* (one more per click,
+  and a can of bug spray to deal with them), a ceiling leak, and a can of orange soda you can knock
+  over — the puddle reaching the console gums up the contacts.
 
 Everything in the room is generated in code. Drop a glTF into `web/assets/models/` to replace any of
 it — see [the notes there](web/assets/models/README.md).
 
 ## Controls
 
-Hover the **television** for picture settings (room light, UHF gain, tuning, CRT amount, mute).
-Hover the **cartridge** for a tilt and contact gauge. The overlay at the bottom left has power,
-reset, grab mode, tidy up, and the prop palette. Drag anywhere else to orbit.
+Hover the **television** for picture settings (UHF gain, tuning, CRT amount, room light, OSD, mute).
+Hover the **console** for power, reset and the loaded ROM — drop a `.nes` file on it to swap the
+cartridge. Hover the **cartridge** for a tilt and contact gauge. The overlay at the bottom left has
+power, reset, grab mode, tidy up, and the prop palette (roach, bug spray, ceiling leak, soda can).
+Drag anywhere else to orbit.
 
 The original 2D interface is still there — scroll up for the toolbar, down for the 60-pin connector
 panel, left and right for the debug panels.

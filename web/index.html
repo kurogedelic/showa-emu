@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Famicom Emulator (WASM)</title>
+<title>showa-emu — Famicom in a tatami room</title>
 <style>
   :root {
     --fc-cream: #E9E1D0;    /* 本体の白 */
@@ -838,7 +838,17 @@
   }
   #room-hud.collapsed #hud-body { display: none; }
   .hud-row { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
-  .hud-row > span:first-child { width: 74px; flex-shrink: 0; font-size: 9px; }
+  .hud-row > span:first-child { width: 62px; flex-shrink: 0; font-size: 9px; letter-spacing: 0.04em; }
+  .hud-sec {
+    margin: 7px 0 1px;
+    font-size: 8px;
+    letter-spacing: 0.14em;
+    color: #6f8a4a;
+    border-bottom: 1px solid #2b3a18;
+    padding-bottom: 2px;
+  }
+  .hud-row-btns { gap: 8px; margin-top: 7px; }
+  .hud-row-btns .hud-btn { width: auto; flex: 1 1 0; margin-top: 0; }
   .hud-row input[type=range] {
     flex: 1 1 0;
     min-width: 0;
@@ -1220,30 +1230,34 @@
         <div id="ch-hint">左右=傾ける / 上下=抜き差し</div>
       </div>
       <div id="room-hud">
-        <div id="hud-head"><span id="hud-title">3D パラメータ</span><button id="hud-toggle">−</button></div>
+        <div id="hud-head"><span id="hud-title">TV</span><button id="hud-toggle">−</button></div>
         <div id="hud-body">
+          <div class="hud-sec">PICTURE</div>
           <div class="hud-row">
-            <span id="lbl-light">部屋の明るさ</span>
-            <input type="range" id="room-light" min="0" max="200" step="1" value="100">
-            <span class="hud-val" id="light-val">100%</span>
-          </div>
-          <div class="hud-row">
-            <span id="lbl-uhf">UHF感度</span>
+            <span id="lbl-uhf">UHF GAIN</span>
             <input type="range" id="uhf-gain" min="0" max="100" step="1" value="100">
             <span class="hud-val" id="uhf-val">100%</span>
           </div>
           <div class="hud-row">
-            <span id="lbl-tune">同調</span>
+            <span id="lbl-tune">TUNING</span>
             <input type="range" id="rf-tune" min="-100" max="100" step="1" value="0">
             <span class="hud-val" id="tune-val">0.00</span>
           </div>
           <div class="hud-row">
-            <span id="lbl-crt">CRTエフェクト</span>
+            <span id="lbl-crt">CRT FX</span>
             <input type="range" id="crt-amount" min="0" max="100" step="1" value="100">
             <span class="hud-val" id="crt-val">100%</span>
           </div>
-          <label class="hud-check"><input type="checkbox" id="osd-on" checked><span id="lbl-osd">OSD</span></label>
-          <button id="hud-mute" class="hud-btn">🔇 <span id="lbl-mute">ミュート</span></button>
+          <div class="hud-sec">ROOM</div>
+          <div class="hud-row">
+            <span id="lbl-light">LIGHT</span>
+            <input type="range" id="room-light" min="0" max="200" step="1" value="100">
+            <span class="hud-val" id="light-val">100%</span>
+          </div>
+          <div class="hud-row hud-row-btns">
+            <label class="hud-check"><input type="checkbox" id="osd-on" checked><span id="lbl-osd">OSD</span></label>
+            <button id="hud-mute" class="hud-btn">🔇 <span id="lbl-mute">MUTE</span></button>
+          </div>
           <div id="hud-read"></div>
         </div>
       </div>

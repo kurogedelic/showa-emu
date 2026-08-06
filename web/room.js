@@ -385,18 +385,20 @@ function applyHud() {
   }
 }
 
-// テレビにホバーしている間だけ HUD を出す (HUD の上にいる間は消さない)
-let hudHideTimer = 0;
-function showRoomHud(on) {
-  if (!hud.panel) return;
-  clearTimeout(hudHideTimer);
-  if (on) hud.panel.classList.add('on');
-  else hudHideTimer = setTimeout(() => hud.panel.classList.remove('on'), 450);
+// ホバーで出る HUD。HUD の上にカーソルがある間は消さず、離れて少し経ってから閉じる
+function autoHideHud(el, delay = 500) {
+  if (!el) return () => {};
+  let timer = 0;
+  const show = (on) => {
+    clearTimeout(timer);
+    if (on) el.classList.add('on');
+    else timer = setTimeout(() => el.classList.remove('on'), delay);
+  };
+  el.addEventListener('pointerenter', () => show(true));
+  el.addEventListener('pointerleave', () => show(false));
+  return show;
 }
-if (hud.panel) {
-  hud.panel.addEventListener('pointerenter', () => showRoomHud(true));
-  hud.panel.addEventListener('pointerleave', () => showRoomHud(false));
-}
+const showRoomHud = autoHideHud(hud.panel);
 
 {
   let saved = {};
@@ -554,6 +556,7 @@ if (fcHud.reset) {
   fcHud.reset.addEventListener('pointercancel', () => hold(false));
   fcHud.reset.addEventListener('pointerleave', () => hold(false));
 }
+const fcHudToggle = autoHideHud(fcHud.el);
 function refreshFcHud() {
   if (!fcHud.el) return;
   const on = window.NES_UI ? window.NES_UI.isPowered() : false;
@@ -1333,23 +1336,57 @@ function buildSprayCan() {
   return g;
 }
 
+// 霧のスプライト用のふんわりしたテクスチャ
+function fogTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,0.55)');
+  grd.addColorStop(0.35, 'rgba(232,245,235,0.28)');
+  grd.addColorStop(1, 'rgba(220,240,228,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 function initSpray() {
   spray.can = buildSprayCan();
-  spray.can.position.set(0.16, -0.14, -0.34);
-  spray.can.rotation.set(-0.35, 0, -0.5);
   spray.can.visible = false;
-  camera.add(spray.can);
-  scene.add(camera);          // カメラの子を描画するためシーンに入れる
+  scene.add(spray.can);       // ワールドに置いてカーソルへ追従させる
 
-  // 噴射のパーティクル
-  const geo = new THREE.SphereGeometry(0.012, 6, 5);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xdff0e0, transparent: true, opacity: 0.5 });
-  for (let i = 0; i < 40; i++) {
-    const m = new THREE.Mesh(geo, mat.clone());
+  // 噴射の霧 (常にカメラを向くスプライト)
+  const tex = fogTexture();
+  for (let i = 0; i < 90; i++) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, transparent: true, opacity: 0, depthWrite: false,
+    }));
     m.visible = false;
     scene.add(m);
-    spray.puffs.push({ mesh: m, life: 0, vel: new THREE.Vector3() });
+    spray.puffs.push({ mesh: m, life: 0, max: 1, vel: new THREE.Vector3(), spin: 0 });
   }
+}
+
+// カーソルの先にスプレー缶を構える
+const _aimQ = new THREE.Quaternion(), _aimUp = new THREE.Vector3(0, 1, 0);
+function aimSpray(origin, dir) {
+  if (!spray.can) return;
+  spray.can.position.copy(origin).addScaledVector(dir, 0.30);
+  // カメラから見て少し下・右に構える
+  const right = new THREE.Vector3().crossVectors(dir, _aimUp).normalize();
+  const down = new THREE.Vector3().crossVectors(right, dir).normalize();
+  spray.can.position.addScaledVector(right, 0.075).addScaledVector(down, -0.075);
+  // 缶の +Y (ノズル) を照準方向へ向け、少しだけ寝かせる
+  _aimQ.setFromUnitVectors(_aimUp, dir);
+  spray.can.quaternion.copy(_aimQ);
+  spray.can.rotateX(-0.45);
+}
+
+// ノズルの先端 (噴射の出どころ)
+function nozzlePoint(out) {
+  return out.set(0, 0.14, 0).applyQuaternion(spray.can.quaternion).add(spray.can.position);
 }
 
 function setSprayMode(on) {
@@ -1362,17 +1399,22 @@ function setSprayMode(on) {
 function doSpray(origin, dir) {
   let n = 0;
   for (const p of spray.puffs) {
-    if (p.life > 0 || n >= 12) continue;
+    if (p.life > 0 || n >= 26) continue;
     n++;
-    p.life = 0.55 + Math.random() * 0.25;
+    // 出た直後は速くて細かく、進むほど広がって薄くなる
+    const t = n / 26;
+    p.max = 0.9 + Math.random() * 0.7;
+    p.life = p.max;
     p.mesh.visible = true;
-    p.mesh.scale.setScalar(0.4);
-    p.mesh.material.opacity = 0.55;
-    p.mesh.position.copy(origin);
-    p.vel.copy(dir).multiplyScalar(2.4 + Math.random() * 1.6);
-    p.vel.x += (Math.random() - 0.5) * 0.7;
-    p.vel.y += (Math.random() - 0.5) * 0.7;
-    p.vel.z += (Math.random() - 0.5) * 0.7;
+    p.mesh.scale.setScalar(0.02 + Math.random() * 0.02);
+    p.mesh.material.opacity = 0;
+    p.mesh.material.rotation = Math.random() * Math.PI;
+    p.spin = (Math.random() - 0.5) * 1.2;
+    p.mesh.position.copy(origin).addScaledVector(dir, t * 0.05);
+    p.vel.copy(dir).multiplyScalar(2.0 + Math.random() * 2.2);
+    p.vel.x += (Math.random() - 0.5) * 0.5;
+    p.vel.y += (Math.random() - 0.5) * 0.5;
+    p.vel.z += (Math.random() - 0.5) * 0.5;
   }
   // 噴射方向の細い円錐に入っているゴキブリを倒す
   const v = new THREE.Vector3();
@@ -1390,12 +1432,16 @@ function updateSpray(dt) {
   for (const p of spray.puffs) {
     if (p.life <= 0) continue;
     p.life -= dt;
+    const age = 1 - p.life / p.max;                 // 0 = 出たて, 1 = 消える寸前
     p.mesh.position.addScaledVector(p.vel, dt);
-    p.vel.multiplyScalar(1 - dt * 3.5);
-    p.vel.y -= 0.7 * dt;
-    p.mesh.scale.multiplyScalar(1 + dt * 2.4);
-    p.mesh.material.opacity = Math.max(0, p.life * 0.7);
-    if (p.life <= 0) p.mesh.visible = false;
+    p.vel.multiplyScalar(1 - dt * 2.2);             // 空気抵抗で減速
+    p.vel.y += (0.25 - p.vel.y) * dt * 0.8;         // 漂って少しだけ上がる
+    p.mesh.scale.setScalar(0.03 + age * 0.34);      // どんどん広がる
+    p.mesh.material.rotation += p.spin * dt;
+    // 出た瞬間は薄く、すぐ濃くなってからゆっくり消える
+    p.mesh.material.opacity = Math.min(1, age * 6) * (1 - age) * 0.5;
+    if (p.mesh.position.y < 0.01) p.mesh.position.y = 0.01;   // 床を這う
+    if (p.life <= 0) { p.mesh.visible = false; p.mesh.material.opacity = 0; }
   }
 }
 
@@ -1533,8 +1579,9 @@ function bindPointer(canvas) {
   const placeCartHud = (e) => placeHudAt(cartHud.el, e);
   const showFcHud = (on, e) => {
     if (!fcHud.el) return;
-    fcHud.el.classList.toggle('on', on);
-    if (on) { refreshFcHud(); placeHudAt(fcHud.el, e); }
+    if (on && !fcHud.el.classList.contains('on')) placeHudAt(fcHud.el, e);
+    if (on) refreshFcHud();
+    fcHudToggle(on);
   };
 
   const showCartHud = (on, e) => {
@@ -1548,9 +1595,10 @@ function bindPointer(canvas) {
 
   canvas.addEventListener('pointerdown', (e) => {
     if (spray.on) {
-      // スプレーモード: 照準方向に噴射
+      // スプレーモード: ノズルの先から照準方向へ噴射
       setNdc(e);
-      doSpray(ray.ray.origin.clone().addScaledVector(ray.ray.direction, 0.35), ray.ray.direction.clone());
+      aimSpray(ray.ray.origin, ray.ray.direction);
+      doSpray(nozzlePoint(new THREE.Vector3()), ray.ray.direction.clone());
       sfx.spray();
       return;
     }
@@ -1631,6 +1679,11 @@ function bindPointer(canvas) {
         );
         b.angularVelocity.scale(0.85, b.angularVelocity);
       }
+      return;
+    }
+    if (spray.on) {
+      setNdc(e);
+      aimSpray(ray.ray.origin, ray.ray.direction);
       return;
     }
     if (mode === 'cart') {

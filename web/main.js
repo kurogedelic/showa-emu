@@ -91,15 +91,8 @@
     set('lbl-master', 'masterVol');
 
     set('settings-note', 'settingsNote');
-    set('hud-title', 'hud3d');
-    set('lbl-light', 'roomLight');
-    set('lbl-uhf', 'uhfGain');
-    set('lbl-tune', 'rfTune');
-    set('lbl-mute', 'muteLabel');
     set('ch-title', 'cartTiltTitle');
     set('ch-hint', 'dragHint');
-    set('lbl-osd', 'osdLabel');
-    set('lbl-crt', 'crtFx');
     set('settings-close', 'close');
     set('swap-close', 'close');
     set('check-close', 'close');
