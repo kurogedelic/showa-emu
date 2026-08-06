@@ -286,6 +286,41 @@ export function createLeak(scene, { x, z, ceilingY }) {
   };
 }
 
+// ------------------------------------------------------------------ たらい
+// 天井から降ってくるやつ。直径 500 x 高さ 170mm のブリキのたらい
+export function createTarai(scene) {
+  const R = 0.25, H = 0.17;
+  const g = new THREE.Group();
+  const tin = new THREE.MeshStandardMaterial({
+    color: 0xb9bec4, roughness: 0.32, metalness: 0.85, side: THREE.DoubleSide,
+  });
+  // 側面 (下がすぼまった形)
+  const side = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 0.78, H, 32, 1, true), tin);
+  side.position.y = H / 2;
+  side.castShadow = side.receiveShadow = true;
+  g.add(side);
+  // 底
+  const bottom = new THREE.Mesh(new THREE.CircleGeometry(R * 0.78, 32), tin);
+  bottom.rotation.x = -Math.PI / 2;
+  bottom.position.y = 0.001;
+  g.add(bottom);
+  // 縁の巻き込み
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.008, 8, 36), tin);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = H;
+  g.add(rim);
+  // 補強のリブ
+  for (const y of [H * 0.35, H * 0.62]) {
+    const rib = new THREE.Mesh(new THREE.TorusGeometry(R * (0.82 + y / H * 0.16), 0.003, 6, 32), tin);
+    rib.rotation.x = Math.PI / 2;
+    rib.position.y = y;
+    g.add(rib);
+  }
+  g.visible = false;
+  scene.add(g);
+  return { object: g, radius: R, height: H };
+}
+
 // -------------------------------------------------------- オレンジジュースの缶
 function canLabelTexture() {
   const c = document.createElement('canvas');

@@ -1,7 +1,7 @@
 # showa-emu
 
 A Famicom emulator that runs inside a **Shōwa-era living room**: a CRT television on a stand in a
-six-mat tatami room, with a console, an RF switch box, cables you can actually unplug, and physics.
+eight-mat tatami room, with a console, an RF switch box, cables you can actually unplug, and physics.
 Forked from [GOROman/cluade-famicom-emu](https://github.com/GOROman/cluade-famicom-emu).
 
 **▶ Play: https://kurogedelic.github.io/showa-emu/**
@@ -25,6 +25,8 @@ bundled in this repo. Use **Open ROM** in the toolbar to load your own `.nes` fi
   Drag it up to unseat it and the contacts drop out one by one; drag sideways to tilt it.
 - **Physics** (cannon-es). Grab and throw the television, the stand, the console. Knocks make the
   picture warp and settle; a knock to the console makes the contacts bounce and the game glitch.
+  Throw something hard enough at a wall and the wall falls over, Drifters-style — behind it is just
+  blue sky.
 - **Room props.** Cockroaches that scuttle across the floor *and up the walls* (one more per click,
   and a can of bug spray to deal with them), a ceiling leak, and a can of orange soda you can knock
   over — the puddle reaching the console gums up the contacts.
@@ -34,14 +36,14 @@ it — see [the notes there](web/assets/models/README.md).
 
 ## Controls
 
-Hover the **television** for picture settings (UHF gain, tuning, CRT amount, room light, OSD, mute).
+Hover the **television** for its own settings (UHF gain, tuning, CRT effect, OSD, mute).
 Hover the **console** for power, reset and the loaded ROM — drop a `.nes` file on it to swap the
 cartridge. Hover the **cartridge** for a tilt and contact gauge. The overlay at the bottom left has
-power, reset, grab mode, tidy up, and the prop palette (roach, bug spray, ceiling leak, soda can).
-Drag anywhere else to orbit.
+power, reset, grab mode, tidy up, the room light, and the prop palette (roach, bug spray, ceiling
+leak, soda can, falling washtub). Drag anywhere else to orbit.
 
-The original 2D interface is still there — scroll up for the toolbar, down for the 60-pin connector
-panel, left and right for the debug panels.
+The original 2D interface is still reachable: `?room=0` gives you the plain emulator with its
+toolbar and 60-pin connector panel. In 3D, the debug panels are still there — scroll left and right.
 
 | NES | Keyboard | Gamepad |
 |---|---|---|

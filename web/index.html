@@ -897,6 +897,9 @@
     font-family: ui-monospace, Menlo, monospace;
   }
   body.room-on #room-toolbar { display: flex; }
+  /* 3D 中はエミュレータ時代の上下のパネルを隠す (左右のデバッグ表示は残す) */
+  body.room-on #toolbar,
+  body.room-on #cartbus { display: none !important; }
   .rt-row { display: flex; gap: 5px; }
   .rt-btn {
     display: inline-flex;
@@ -1205,11 +1208,16 @@
           <button id="rt-grab" class="rt-btn" title="Grab / throw things">✋ <span id="lbl-rt-grab">GRAB</span></button>
           <button id="rt-tidy" class="rt-btn" title="Tidy up">🧹 <span id="lbl-rt-tidy">TIDY</span></button>
         </div>
+        <div class="rt-row">
+          <button id="rt-light" class="rt-btn" title="Room light">💡 <span id="rt-light-val">LIGHT</span></button>
+        </div>
+        <input type="range" id="room-light" min="0" max="200" step="1" value="100" hidden>
         <div class="rt-row rt-palette">
           <button id="rt-roach" class="rt-btn rt-icon" title="Roach">🪳</button>
           <button id="rt-spray" class="rt-btn rt-icon" title="Bug spray">🧴</button>
           <button id="rt-leak" class="rt-btn rt-icon" title="Leak">💧</button>
           <button id="rt-can" class="rt-btn rt-icon" title="Soda">🥤</button>
+          <button id="rt-tarai" class="rt-btn rt-icon" title="Drop a washtub">🪣</button>
         </div>
       </div>
       <div id="fc-hud">
@@ -1248,14 +1256,8 @@
             <input type="range" id="crt-amount" min="0" max="100" step="1" value="100">
             <span class="hud-val" id="crt-val">100%</span>
           </div>
-          <div class="hud-sec">ROOM</div>
-          <div class="hud-row">
-            <span id="lbl-light">LIGHT</span>
-            <input type="range" id="room-light" min="0" max="200" step="1" value="100">
-            <span class="hud-val" id="light-val">100%</span>
-          </div>
           <div class="hud-row hud-row-btns">
-            <label class="hud-check"><input type="checkbox" id="osd-on" checked><span id="lbl-osd">OSD</span></label>
+            <label class="hud-check"><input type="checkbox" id="osd-on"><span id="lbl-osd">OSD</span></label>
             <button id="hud-mute" class="hud-btn">🔇 <span id="lbl-mute">MUTE</span></button>
           </div>
           <div id="hud-read"></div>

@@ -104,6 +104,19 @@ export const sfx = {
   },
   // 殺虫スプレー
   spray() { noise(0.42, { gain: 0.22, type: 'highpass', freq: 2200, q: 0.4, sweepTo: 5200 }); },
+  // たらいが当たる「ガラーン」
+  clang() {
+    const base = 520 + Math.random() * 120;
+    [1, 1.51, 2.03, 2.71].forEach((r, i) =>
+      tone(base * r, 1.1 - i * 0.16, { gain: 0.16 / (i + 1), type: 'triangle' }));
+    noise(0.12, { gain: 0.25, freq: 2600, q: 0.8, sweepTo: 700 });
+  },
+  // 壁が倒れる
+  crash() {
+    noise(0.7, { gain: 0.3, type: 'lowpass', freq: 900, q: 0.5, sweepTo: 120 });
+    tone(90, 0.5, { gain: 0.24, type: 'sine', to: 45 });
+    tone(140, 0.35, { gain: 0.14, type: 'square', to: 60, delay: 0.08 });
+  },
   // 缶を置く
   can() { noise(0.06, { gain: 0.2, freq: 900, q: 2 }); tone(660, 0.09, { gain: 0.1, type: 'triangle', to: 380 }); },
 };

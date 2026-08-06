@@ -9,7 +9,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as CANNON from './vendor/cannon-es.js';
 import { createCables } from './cables.js';
-import { createRoach, createLeak, createCan } from './props.js';
+import { createRoach, createLeak, createCan, createTarai } from './props.js';
 import { sfx } from './sfx.js';
 
 const MODEL_DIR = './assets/models/';
@@ -23,7 +23,7 @@ const cartSlider = document.getElementById('cart-tilt');
 let renderer, scene, camera, controls, screenTex, screenMesh;
 let cassetteGroup, running = false, started = false;
 let standItem = null, crtItem = null, famItem = null, cartItem = null, convItem = null, canItem = null;
-let cables = null, roach = null, leak = null, can = null;
+let cables = null, roach = null, leak = null, can = null, tarai = null, taraiItem = null;
 const roaches = [];
 const ROACH_MAX = 16;
 
@@ -513,7 +513,36 @@ if (tidyBtn) {
     if (leak) leak.dry();
     juiceFault = 0;
     if (cables) for (const c of cables.cables) { c.held = false; c.connected = true; }
+    if (tarai) tarai.object.visible = false;
   });
+}
+
+// --- 部屋の明かり (テレビのオプションではないのでオーバーレイ側に置く) ---
+const lightBtn = document.getElementById('rt-light');
+const LIGHT_STEPS = [
+  { v: 130, name: 'BRIGHT' },
+  { v: 70, name: 'DIM' },
+  { v: 18, name: 'NIGHT' },
+  { v: 0, name: 'DARK' },
+];
+if (lightBtn && hud.light) {
+  const refreshLight = () => {
+    const cur = hudVal(hud.light, 100);
+    // 一番近い段を表示名にする
+    let best = LIGHT_STEPS[0];
+    for (const s of LIGHT_STEPS) if (Math.abs(s.v - cur) < Math.abs(best.v - cur)) best = s;
+    document.getElementById('rt-light-val').textContent = best.name;
+    lightBtn.classList.toggle('on', cur > 90);
+  };
+  lightBtn.addEventListener('click', () => {
+    const cur = hudVal(hud.light, 100);
+    let i = LIGHT_STEPS.findIndex((s) => Math.abs(s.v - cur) < 12);
+    i = (i + 1) % LIGHT_STEPS.length;
+    hud.light.value = LIGHT_STEPS[i].v;
+    applyHud();
+    refreshLight();
+  });
+  refreshLight();
 }
 
 // --- 小物のパレット ---
@@ -521,6 +550,28 @@ const roachBtn = document.getElementById('rt-roach');
 const leakBtn = document.getElementById('rt-leak');
 const canBtn = document.getElementById('rt-can');
 if (roachBtn) roachBtn.addEventListener('click', spawnRoach);
+const taraiBtn = document.getElementById('rt-tarai');
+if (taraiBtn) {
+  taraiBtn.addEventListener('click', () => {
+    if (!tarai || !taraiItem) return;
+    // いま見ているあたりの真上から落とす
+    const t = controls ? controls.target : new THREE.Vector3();
+    tarai.object.visible = true;
+    taraiItem.body.mass = taraiItem.mass;
+    taraiItem.body.type = CANNON.Body.DYNAMIC;
+    taraiItem.body.updateMassProperties();
+    taraiItem.body.position.set(
+      t.x + (Math.random() - 0.5) * 0.25,
+      ROOM_H - 0.25,
+      t.z + (Math.random() - 0.5) * 0.25
+    );
+    taraiItem.body.quaternion.set(0, 0, 0, 1);
+    taraiItem.body.velocity.set(0, -0.5, 0);
+    taraiItem.body.angularVelocity.set((Math.random() - 0.5) * 1.2, 0, (Math.random() - 0.5) * 1.2);
+    taraiItem.body.wakeUp();
+  });
+}
+
 const sprayBtn = document.getElementById('rt-spray');
 if (sprayBtn) {
   sprayBtn.addEventListener('click', () => {
@@ -616,6 +667,7 @@ if (canBtn) {
     canItem.body.type = CANNON.Body.DYNAMIC;
     canItem.body.updateMassProperties();
     canItem.body.wakeUp();
+    sfx.can();
   });
 }
 
@@ -632,8 +684,8 @@ function tt(key, vars) {
 // 寸法はすべてメートル。実物の寸法に合わせてある:
 //   6畳間 2.73 x 3.64 m / 畳 910 x 1820 mm / 14型 CRT / カセット 110 x 122 x 17 mm
 const MAT_W = 0.91, MAT_L = 1.82;          // 江戸間ではなく京間寄りの 1畳
-const ROOM_W = MAT_W * 3, ROOM_D = MAT_L * 2;   // 2.73 x 3.64 m (6畳)
-const ROOM_H = 2.4;
+const ROOM_W = MAT_W * 4, ROOM_D = MAT_L * 2;   // 3.64 x 3.64 m (8畳)
+const ROOM_H = 2.5;
 
 // 角の丸い箱 (筐体・カセットの本体に使う)
 function roundedBox(w, h, d, r, bevel = 0.004) {
@@ -660,10 +712,12 @@ function buildRoom() {
   // 畳 6枚 (よくある 6畳の敷き方)
   const tatMat = new THREE.MeshStandardMaterial({ map: tatamiTexture(), roughness: 0.95 });
   const tatHalf = new THREE.MeshStandardMaterial({ map: tatamiTexture(), roughness: 0.95 });
-  const layout = [   // [x, z, 回転(縦置き=true)]
-    [-MAT_W, -MAT_L / 2, false], [0, -MAT_L / 2, false], [MAT_W, -MAT_L / 2, false],
-    [-MAT_W, MAT_L / 2, false], [0, MAT_L / 2, false], [MAT_W, MAT_L / 2, false],
-  ];
+  const layout = [];        // 8畳: 4列 x 2行
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 4; c++) {
+      layout.push([(c - 1.5) * MAT_W, (r - 0.5) * MAT_L, false]);
+    }
+  }
   for (const [x, z, rot] of layout) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(MAT_W, MAT_L), rot ? tatHalf : tatMat);
     m.rotation.x = -Math.PI / 2;
@@ -673,18 +727,24 @@ function buildRoom() {
     room.add(m);
   }
 
-  const wallMat = new THREE.MeshStandardMaterial({ map: wallTexture(), roughness: 1, side: THREE.DoubleSide });
-  const mkWall = (w, h, x, y, z, ry) => {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallMat);
-    m.position.set(x, y, z);
+  // 壁は板 (厚み 60mm)。ぶつけると倒れるので剛体として登録する
+  const wallMat = new THREE.MeshStandardMaterial({ map: wallTexture(), roughness: 1 });
+  const WALL_T = 0.06;
+  const walls = [];
+  const mkWall = (w, x, z, ry) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, ROOM_H, WALL_T), wallMat);
+    m.position.set(x, ROOM_H / 2, z);
     m.rotation.y = ry;
-    m.receiveShadow = true;
+    m.receiveShadow = m.castShadow = true;
+    m.userData.wallSize = new THREE.Vector3(w, ROOM_H, WALL_T);
     room.add(m);
+    walls.push(m);
     return m;
   };
-  mkWall(ROOM_W, ROOM_H, 0, ROOM_H / 2, -ROOM_D / 2, 0);
-  mkWall(ROOM_D, ROOM_H, -ROOM_W / 2, ROOM_H / 2, 0, Math.PI / 2);
-  mkWall(ROOM_D, ROOM_H, ROOM_W / 2, ROOM_H / 2, 0, -Math.PI / 2);
+  mkWall(ROOM_W, 0, -ROOM_D / 2 - WALL_T / 2, 0);
+  mkWall(ROOM_D, -ROOM_W / 2 - WALL_T / 2, 0, Math.PI / 2);
+  mkWall(ROOM_D, ROOM_W / 2 + WALL_T / 2, 0, -Math.PI / 2);
+  room.userData.walls = walls;
 
   // 障子 (右の壁)
   const shoji = new THREE.Group();
@@ -718,6 +778,39 @@ function buildRoom() {
   room.add(ceil);
 
   return room;
+}
+
+// 家の外。壁が倒れたときに見える青空と地面
+function buildOutside() {
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 256;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0, '#3f7fd8');
+  grd.addColorStop(0.55, '#8fc0ea');
+  grd.addColorStop(0.78, '#dce9f2');
+  grd.addColorStop(1, '#cbd8c8');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 4, 256);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  const sky = new THREE.Mesh(
+    new THREE.SphereGeometry(28, 24, 16),
+    new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false })
+  );
+  sky.position.y = 6;
+  scene.add(sky);
+
+  // 外の地面 (部屋の床より少しだけ下)
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(56, 56),
+    new THREE.MeshStandardMaterial({ color: 0x6f7a52, roughness: 1 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.02;
+  ground.receiveShadow = true;
+  scene.add(ground);
 }
 
 function buildTvStand() {
@@ -1176,27 +1269,40 @@ function initPhysics() {
   world.defaultContactMaterial.restitution = 0.22;
   phys.world = world;
 
-  // 床
+  // 床 (外の地面も兼ねるので無限平面のまま)
   const floor = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
   floor.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
   world.addBody(floor);
 
-  // 壁 (奥・左・右) と、外に飛び出さないように手前にも見えない壁
-  const wall = (x, z, ry) => {
-    const b = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
-    b.quaternion.setFromEuler(0, ry, 0);
-    b.position.set(x, 0, z);
-    world.addBody(b);
-  };
-  wall(0, -ROOM_D / 2, 0);
-  wall(0, ROOM_D / 2, Math.PI);
-  wall(-ROOM_W / 2, 0, Math.PI / 2);
-  wall(ROOM_W / 2, 0, -Math.PI / 2);
-  // 天井
-  const ceil = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
-  ceil.quaternion.setFromEuler(Math.PI / 2, 0, 0);
-  ceil.position.set(0, ROOM_H, 0);
-  world.addBody(ceil);
+  // 手前だけは見えない壁で塞いでおく (カメラ側に飛んでこないように)
+  const front = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
+  front.quaternion.setFromEuler(0, Math.PI, 0);
+  front.position.set(0, 0, ROOM_D / 2 + 0.4);
+  world.addBody(front);
+}
+
+// 壁: 普段は静止。強くぶつけるとドリフの舞台みたいに倒れる
+function registerWalls(room) {
+  for (const m of room.userData.walls || []) {
+    const s = m.userData.wallSize;
+    m.name = 'wall';
+    const it = addPhysicsItem(m, s, new THREE.Vector3(0, 0, 0), 26);
+    it.isWall = true;
+    it.body.addEventListener('collide', (e) => {
+      if (it.body.type === CANNON.Body.DYNAMIC) return;
+      const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
+      if (v < 2.0) return;
+      // 外側へ倒れる
+      it.body.mass = it.mass;
+      it.body.type = CANNON.Body.DYNAMIC;
+      it.body.updateMassProperties();
+      it.body.wakeUp();
+      const n = new THREE.Vector3(m.position.x, 0, m.position.z).normalize();
+      it.body.velocity.set(n.x * 0.6, 0.2, n.z * 0.6);
+      it.body.angularVelocity.set(-n.z * 2.2, 0, n.x * 2.2);
+      sfx.crash();
+    });
+  }
 }
 
 // obj のローカル寸法 size と、その中心 center を与えて剛体を作る
@@ -1241,6 +1347,8 @@ function syncObjectFromBody(item) {
 function setPhysicsEnabled(on) {
   phys.enabled = on;
   for (const it of phys.items) {
+    // 壁は「ぶつけたら倒れる」専用なので、掴むモードでは動かさない
+    if (it.isWall) continue;
     // 挿さったままのカセットは本体の一部として扱う (掴んだ時点で抜ける)
     if (on && it === cartItem && cassetteGroup.parent !== scene) {
       it.body.mass = 0;
@@ -1268,6 +1376,11 @@ function setPhysicsEnabled(on) {
 // 片付ける: 全部を元の位置に戻す
 function resetPhysics() {
   for (const it of phys.items) {
+    if (it.isWall) {          // 倒れた壁を立て直す
+      it.body.mass = 0;
+      it.body.type = CANNON.Body.STATIC;
+      it.body.updateMassProperties();
+    }
     if (it.reattach) it.reattach();
     it.obj.position.copy(it.home.pos);
     it.obj.quaternion.copy(it.home.quat);
@@ -1751,11 +1864,13 @@ function init() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0d0c0b);
 
+  initPhysics();          // 壁を剛体として登録するので、部屋より先に世界を作る
+
   const room = buildRoom();
   scene.add(room);
   placeholders.room = room;
-
-  initPhysics();
+  registerWalls(room);
+  buildOutside();
 
   const TV_Z = -ROOM_D / 2 + 0.30;    // テレビは奥の壁ぎわ
   const stand = buildTvStand();
@@ -1887,6 +2002,17 @@ function init() {
   can = createCan(scene, new THREE.Vector3(0.62, 0.004, TV_Z + 0.80));
   canItem = addPhysicsItem(can.object, V3(0.066, can.height, 0.066), V3(0, can.height / 2, 0), 0.38);
 
+  // たらい (天井から降ってくる)
+  tarai = createTarai(scene);
+  tarai.object.name = 'tarai';
+  tarai.object.position.set(0, ROOM_H + 1, 0);
+  taraiItem = addPhysicsItem(
+    tarai.object,
+    V3(tarai.radius * 2, tarai.height, tarai.radius * 2),
+    V3(0, tarai.height / 2, 0), 3.2
+  );
+  watchImpacts(taraiItem, () => sfx.clang());
+
   const hemi = new THREE.HemisphereLight(0xfff0d8, 0x7a6446, LIGHT_BASE.hemi);
   scene.add(hemi);
   const key = new THREE.DirectionalLight(0xfff2d8, LIGHT_BASE.key);
@@ -1899,21 +2025,23 @@ function init() {
   lights = { hemi, key, glow: crt.getObjectByProperty('isPointLight', true) };
   applyHud();
 
-  // 座って観ているくらいの目線
-  const eye = new THREE.Vector3(0.16, 0.62, TV_Z + 1.05);
-  camera = new THREE.PerspectiveCamera(42, 1, 0.02, 40);
-  camera.position.copy(eye);
+  // 部屋全体が見えるところから始める (寄るのはホイールで)
+  camera = new THREE.PerspectiveCamera(45, 1, 0.02, 40);
+  camera.position.set(0.55, 1.25, TV_Z + 2.35);
 
   controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 0.68, TV_Z);
+  controls.target.set(0, 0.60, TV_Z + 0.15);
   controls.enableDamping = true;
   controls.minDistance = 0.25;
-  controls.maxDistance = 2.6;
+  controls.maxDistance = 3.4;
   controls.maxPolarAngle = Math.PI * 0.52;
   controls.update();
 
   initSpray();
   bindPointer(renderer.domElement);
+  // 既定で掴めるようにしておく
+  setPhysicsEnabled(true);
+  if (physBtn) physBtn.classList.add('on');
   // デバッグ用フック (コンソールから触れるように)
   window.__room = {
     THREE, CANNON, renderer, scene, camera, controls, placeholders, drawOsd,
