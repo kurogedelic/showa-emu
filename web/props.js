@@ -43,27 +43,53 @@ export function createRoach(scene, bounds) {
   g.visible = false;
   scene.add(g);
 
-  const st = {
-    group: g, enabled: true, alive: false, t: 0, next: 6 + Math.random() * 14,
-    heading: 0, speed: 0, burst: 0, life: 0, panic: 0, walk: 0,
+  // 走る面。床と 3 枚の壁を (u, v) の 2 次元で扱う
+  const { w, d, h = 2.4 } = bounds;
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
+  const SURF = {
+    floor: { o: V(0, 0, 0), u: V(1, 0, 0), v: V(0, 0, 1), n: V(0, 1, 0), lu: w / 2, lv: d / 2 },
+    back: { o: V(0, 0, -d / 2), u: V(1, 0, 0), v: V(0, 1, 0), n: V(0, 0, 1), lu: w / 2, lv: h },
+    left: { o: V(-w / 2, 0, 0), u: V(0, 0, 1), v: V(0, 1, 0), n: V(1, 0, 0), lu: d / 2, lv: h },
+    right: { o: V(w / 2, 0, 0), u: V(0, 0, -1), v: V(0, 1, 0), n: V(-1, 0, 0), lu: d / 2, lv: h },
   };
 
+  const st = {
+    group: g, enabled: true, alive: false, dying: false, fade: 1, twitch: 0,
+    t: 0, next: 6 + Math.random() * 14,
+    surf: 'floor', u: 0, v: 0, heading: 0, speed: 0, burst: 0, life: 0, panic: 0, walk: 0,
+  };
+
+  const _p = new THREE.Vector3(), _f = new THREE.Vector3(), _s = new THREE.Vector3();
+  const _m = new THREE.Matrix4();
+
+  // (u, v) と向きから、面に貼り付いた姿勢を作る
+  function place() {
+    const S = SURF[st.surf];
+    _p.copy(S.o).addScaledVector(S.u, st.u).addScaledVector(S.v, st.v).addScaledVector(S.n, 0.004);
+    g.position.copy(_p);
+    _f.copy(S.u).multiplyScalar(Math.sin(st.heading)).addScaledVector(S.v, Math.cos(st.heading));
+    _s.crossVectors(S.n, _f);
+    _m.makeBasis(_s, S.n, _f);
+    g.quaternion.setFromRotationMatrix(_m);
+    if (st.dying) g.rotateZ(Math.PI * st.flip);
+  }
+
   function spawn() {
+    st.surf = 'floor';
     const edge = Math.floor(Math.random() * 4);
-    const { w, d } = bounds;
-    const p = [
-      [(Math.random() - 0.5) * w, -d / 2 + 0.05],
-      [(Math.random() - 0.5) * w, d / 2 - 0.05],
-      [-w / 2 + 0.05, (Math.random() - 0.5) * d],
-      [w / 2 - 0.05, (Math.random() - 0.5) * d],
-    ][edge];
-    g.position.set(p[0], 0.002, p[1]);
-    st.heading = Math.atan2(-p[0], -p[1]) + (Math.random() - 0.5) * 1.2;
+    const S = SURF.floor;
+    if (edge < 2) { st.u = (Math.random() - 0.5) * w; st.v = (edge ? 1 : -1) * (S.lv - 0.05); }
+    else { st.u = (edge === 2 ? -1 : 1) * (S.lu - 0.05); st.v = (Math.random() - 0.5) * d; }
+    st.heading = Math.atan2(-st.u, -st.v) + (Math.random() - 0.5) * 1.2;
     st.alive = true;
-    st.life = 7 + Math.random() * 6;
+    st.dying = false;
+    st.flip = 0;
+    st.fade = 1;
+    st.life = 9 + Math.random() * 8;
     st.burst = 0;
     st.panic = 0;
     g.visible = true;
+    place();
   }
 
   function update(dt) {
@@ -73,6 +99,7 @@ export function createRoach(scene, bounds) {
       if (st.t >= st.next) { st.t = 0; st.next = 14 + Math.random() * 26; spawn(); }
       return;
     }
+    if (st.dying) { dieUpdate(dt); return; }
     st.life -= dt;
     st.panic = Math.max(0, st.panic - dt);
     st.burst -= dt;
@@ -83,23 +110,97 @@ export function createRoach(scene, bounds) {
       if (running) st.heading += (Math.random() - 0.5) * 1.3;
     }
     const sp = st.speed * (st.panic > 0 ? 3.2 : 1);
-    g.position.x += Math.sin(st.heading) * sp * dt;
-    g.position.z += Math.cos(st.heading) * sp * dt;
-    g.rotation.y = st.heading;
+    st.u += Math.sin(st.heading) * sp * dt;
+    st.v += Math.cos(st.heading) * sp * dt;
+
     // 脚をカサカサ動かす
     st.walk += sp * dt * 60;
     for (let i = 0; i < legs.length; i++) {
       legs[i].rotation.x = ((i % 2) ? 1 : -1) * Math.sin(st.walk + i) * 0.4 + (Math.floor(i / 2) - 1) * 0.3;
     }
-    // 壁で跳ね返る
-    const { w, d } = bounds;
-    if (Math.abs(g.position.x) > w / 2 - 0.03) { st.heading = -st.heading; g.position.x = Math.sign(g.position.x) * (w / 2 - 0.03); }
-    if (Math.abs(g.position.z) > d / 2 - 0.03) { st.heading = Math.PI - st.heading; g.position.z = Math.sign(g.position.z) * (d / 2 - 0.03); }
+
+    const S = SURF[st.surf];
+    if (st.surf === 'floor') {
+      // 部屋の端まで来たら、たまにそのまま壁を登る
+      if (st.v < -S.lv) {
+        if (Math.random() < 0.6) { st.surf = 'back'; st.v = 0; st.heading = (Math.random() - 0.5) * 0.5; }
+        else { st.v = -S.lv; st.heading = Math.PI - st.heading; }
+      } else if (st.v > S.lv) { st.v = S.lv; st.heading = Math.PI - st.heading; }
+      else if (st.u < -S.lu) {
+        if (Math.random() < 0.6) { st.surf = 'left'; st.u = -st.v; st.v = 0; st.heading = (Math.random() - 0.5) * 0.5; }
+        else { st.u = -S.lu; st.heading = -st.heading; }
+      } else if (st.u > S.lu) {
+        if (Math.random() < 0.6) { st.surf = 'right'; st.u = st.v; st.v = 0; st.heading = (Math.random() - 0.5) * 0.5; }
+        else { st.u = S.lu; st.heading = -st.heading; }
+      }
+    } else {
+      // 壁: 下に着いたら床へ戻る、天井付近と横端では折り返す
+      if (st.v < 0) {
+        const back = st.surf === 'back';
+        st.surf = 'floor';
+        if (back) { st.v = -SURF.floor.lv + 0.02; st.heading = (Math.random() - 0.5) * 1.2; }
+        else {
+          const right = st.surf === 'right';
+          st.v = st.u * (right ? 1 : -1);
+          st.u = (right ? 1 : -1) * (SURF.floor.lu - 0.02);
+          st.heading = (right ? -1 : 1) * (Math.PI / 2) + (Math.random() - 0.5) * 0.8;
+        }
+      } else if (st.v > S.lv - 0.05) { st.v = S.lv - 0.05; st.heading = Math.PI - st.heading; }
+      if (st.u < -S.lu) { st.u = -S.lu; st.heading = -st.heading; }
+      else if (st.u > S.lu) { st.u = S.lu; st.heading = -st.heading; }
+    }
+    place();
     if (st.life <= 0) { st.alive = false; g.visible = false; }
   }
 
+  // 殺虫スプレーを浴びた: ひっくり返って脚をバタつかせ、やがて消える
+  function kill() {
+    if (!st.alive || st.dying) return;
+    // 壁で浴びたら床に落ちる
+    if (st.surf !== 'floor') {
+      const S = SURF[st.surf];
+      const p = new THREE.Vector3().copy(S.o).addScaledVector(S.u, st.u).addScaledVector(S.v, st.v);
+      st.surf = 'floor';
+      st.u = Math.max(-SURF.floor.lu + 0.02, Math.min(SURF.floor.lu - 0.02, p.x));
+      st.v = Math.max(-SURF.floor.lv + 0.02, Math.min(SURF.floor.lv - 0.02, p.z));
+    }
+    st.dying = true;
+    st.flip = 0;
+    st.fade = 1;
+    st.twitch = 0;
+    st.speed = 0;
+    for (const m of g.children) {
+      if (!m.material) continue;
+      m.material = m.material.clone();
+      m.material.transparent = true;
+    }
+  }
+
+  function dieUpdate(dt) {
+    st.twitch += dt;
+    // ひっくり返る
+    st.flip = Math.min(1, st.flip + dt * 3);
+    place();
+    // しばらく脚がバタつく
+    const kick = Math.max(0, 1 - st.twitch / 2.2);
+    for (let i = 0; i < legs.length; i++) {
+      legs[i].rotation.x = Math.sin(st.twitch * 22 + i * 1.7) * 0.9 * kick + (Math.floor(i / 2) - 1) * 0.3;
+    }
+    if (st.twitch > 2.6) {           // 力尽きてからフェードアウト
+      st.fade = Math.max(0, st.fade - dt * 0.55);
+      for (const m of g.children) if (m.material) m.material.opacity = st.fade;
+      if (st.fade <= 0) {
+        st.alive = false;
+        st.dying = false;
+        g.visible = false;
+        g.rotation.z = 0;
+        for (const m of g.children) if (m.material) m.material.opacity = 1;
+      }
+    }
+  }
+
   return {
-    object: g, state: st, update,
+    object: g, state: st, update, kill,
     summon: () => { if (!st.alive) spawn(); },
     scare: () => { st.panic = 1.6; st.speed = 0.5; st.burst = 1.6; st.heading += Math.PI * (0.6 + Math.random() * 0.8); },
     setEnabled: (v) => { st.enabled = v; if (!v) { st.alive = false; g.visible = false; } },
@@ -247,18 +348,24 @@ export function createCan(scene, pos) {
 
   const st = { spill: 0, spilling: false, contents: 1 };
   const up = new THREE.Vector3();
+  const mouth = new THREE.Vector3();
 
   function update(dt) {
     up.set(0, 1, 0).applyQuaternion(g.quaternion);
     st.spilling = up.y < 0.55 && st.contents > 0;   // 60度以上倒れたら漏れる
-    if (st.spilling) {
-      const rate = (1 - up.y) * 0.35;
-      st.contents = Math.max(0, st.contents - rate * dt);
-      st.spill = Math.min(1, st.spill + rate * dt);
-      puddle.position.x += (g.position.x - puddle.position.x) * Math.min(1, dt * 2);
-      puddle.position.z += (g.position.z - puddle.position.z) * Math.min(1, dt * 2);
-      puddle.scale.setScalar(0.02 + st.spill * 0.30);
+    if (!st.spilling) return;
+    const rate = (1 - up.y) * 0.35;
+    st.contents = Math.max(0, st.contents - rate * dt);
+    st.spill = Math.min(1, st.spill + rate * dt);
+    // こぼれるのは缶の口。原点(底)ではなく飲み口の真下に溜まりを作る
+    mouth.set(0, H, 0).applyQuaternion(g.quaternion).add(g.position);
+    if (st.spill < 0.05) {           // 最初の一滴の位置に置く
+      puddle.position.set(mouth.x, puddle.position.y, mouth.z);
+    } else {                          // 缶が転がったらゆっくり追う
+      puddle.position.x += (mouth.x - puddle.position.x) * Math.min(1, dt * 1.5);
+      puddle.position.z += (mouth.z - puddle.position.z) * Math.min(1, dt * 1.5);
     }
+    puddle.scale.setScalar(0.02 + st.spill * 0.30);
   }
 
   return {

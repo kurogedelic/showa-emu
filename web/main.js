@@ -98,8 +98,6 @@
     set('lbl-mute', 'muteLabel');
     set('ch-title', 'cartTiltTitle');
     set('ch-hint', 'dragHint');
-    set('lbl-phys', 'physLabel');
-    set('lbl-tidy', 'tidyLabel');
     set('lbl-osd', 'osdLabel');
     set('lbl-crt', 'crtFx');
     set('settings-close', 'close');
@@ -437,6 +435,29 @@
   });
   btnReset.addEventListener('pointerup', () => setResetHold(false));
   btnReset.addEventListener('pointercancel', () => setResetHold(false));
+
+  // 3D (room.js) 用の口。合成イベントを投げるより確実
+  window.NES_UI = {
+    togglePower: () => document.getElementById('btn-power').click(),
+    setPower,
+    isPowered: () => powered,
+    setResetHold,
+    isResetHeld: () => resetHeld,
+    getRomName: () => (romLoaded ? statusEl.textContent : ''),
+    // 3D のファミコンに .nes をドロップしたとき: カセットを差し替える
+    async swapCartridge(file) {
+      let buf;
+      try { buf = new Uint8Array(await file.arrayBuffer()); }
+      catch (_) { statusEl.textContent = t('readFail'); return false; }
+      const p = parseNes(buf);
+      if (!p) { statusEl.textContent = t('unsupportedFmt'); return false; }
+      saveSram();   // 旧カセットの SRAM を保存してから抜く
+      cartPrg = { name: file.name, header: p.header, data: p.prg };
+      cartChr = { name: file.name, data: p.chr };
+      applySwap();
+      return true;
+    },
+  };
 
   // ---- カセット入替ダイアログ: まるごと or PRG/CHR を別カセットから合体 ----
   const swapPanel = document.getElementById('swap-panel');

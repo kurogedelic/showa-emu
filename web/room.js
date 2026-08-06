@@ -10,6 +10,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as CANNON from './vendor/cannon-es.js';
 import { createCables } from './cables.js';
 import { createRoach, createLeak, createCan } from './props.js';
+import { sfx } from './sfx.js';
 
 const MODEL_DIR = './assets/models/';
 // 差し替え可能なモデル: ファイル名 -> 仮モデルのプレースホルダ名
@@ -50,7 +51,7 @@ let bump = 0;             // 本体が受けた衝撃 (接点が跳ねてバグ�
 function watchImpacts(item, onHit) {
   item.body.addEventListener('collide', (e) => {
     const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
-    if (v > 0.35) onHit(Math.min(1, v / 3.5));
+    if (v > 0.35) { onHit(Math.min(1, v / 3.5)); sfx.thud(Math.min(1, v / 3.5)); }
   });
 }
 const placeholders = {};   // name -> Group (glTF で差し替えられる)
@@ -452,9 +453,47 @@ if (muteBtn && toolbarMute) {
   ensureMuted(localStorage.getItem('roomMuted') === '1', 200);   // 最大 24 秒粘る
 }
 
-// ---------------------------------------------------------------- 物理の操作
-const physBtn = document.getElementById('hud-phys');
-const tidyBtn = document.getElementById('hud-reset');
+// ------------------------------------------- 左下のオーバーレイ (3D モードの操作)
+// 電源 / リセット / 掴むモード / 片付け と、小物のパレット。
+// 電源とリセットは 2D 側のボタン (main.js が状態を持っている) を叩く。
+const tbPower = document.getElementById('rt-power');
+const tbReset = document.getElementById('rt-reset');
+const btnPower2d = document.getElementById('btn-power');
+const btnReset2d = document.getElementById('btn-reset');
+
+function refreshPowerBtn() {
+  if (!tbPower) return;
+  const on = window.NES_UI ? window.NES_UI.isPowered()
+    : (btnPower2d && btnPower2d.classList.contains('power-on'));
+  tbPower.classList.toggle('on', !!on);
+}
+if (tbPower) {
+  tbPower.addEventListener('click', () => {
+    if (window.NES_UI) window.NES_UI.togglePower();
+    else if (btnPower2d) btnPower2d.click();
+    refreshPowerBtn();
+  });
+  setInterval(refreshPowerBtn, 400);   // 2D 側や AC アダプタ経由の変化も拾う
+}
+if (tbReset) {
+  // リセットはレベル信号: 押している間だけ停止、離した瞬間に再起動
+  const hold = (h) => {
+    if (window.NES_UI) window.NES_UI.setResetHold(h);
+    tbReset.classList.toggle('held', h);
+    if (btnReset2d) btnReset2d.classList.toggle('held', h);
+  };
+  tbReset.addEventListener('pointerdown', (e) => {
+    hold(true);
+    try { tbReset.setPointerCapture(e.pointerId); } catch (err) { /* 合成イベント */ }
+  });
+  const up = () => hold(false);
+  tbReset.addEventListener('pointerup', up);
+  tbReset.addEventListener('pointercancel', up);
+  tbReset.addEventListener('pointerleave', up);
+}
+
+const physBtn = document.getElementById('rt-grab');
+const tidyBtn = document.getElementById('rt-tidy');
 if (physBtn) {
   physBtn.addEventListener('click', () => {
     setPhysicsEnabled(!phys.enabled);
@@ -475,11 +514,84 @@ if (tidyBtn) {
   });
 }
 
-// --- 小物のボタン ---
-const roachBtn = document.getElementById('hud-roach');
-const leakBtn = document.getElementById('hud-leak');
-const canBtn = document.getElementById('hud-can');
+// --- 小物のパレット ---
+const roachBtn = document.getElementById('rt-roach');
+const leakBtn = document.getElementById('rt-leak');
+const canBtn = document.getElementById('rt-can');
 if (roachBtn) roachBtn.addEventListener('click', spawnRoach);
+const sprayBtn = document.getElementById('rt-spray');
+if (sprayBtn) {
+  sprayBtn.addEventListener('click', () => {
+    setSprayMode(!spray.on);
+    sprayBtn.classList.toggle('on', spray.on);
+  });
+}
+
+// --- ファミコンの HUD (電源 / リセット / ROM名) ---
+const fcHud = {
+  el: document.getElementById('fc-hud'),
+  rom: document.getElementById('fc-rom'),
+  power: document.getElementById('fc-power'),
+  reset: document.getElementById('fc-reset'),
+};
+if (fcHud.power) {
+  fcHud.power.addEventListener('click', () => {
+    if (window.NES_UI) window.NES_UI.togglePower();
+    sfx.powerSwitch(window.NES_UI ? window.NES_UI.isPowered() : true);
+    refreshFcHud();
+  });
+}
+if (fcHud.reset) {
+  const hold = (h) => {
+    if (window.NES_UI) window.NES_UI.setResetHold(h);
+    fcHud.reset.classList.toggle('held', h);
+  };
+  fcHud.reset.addEventListener('pointerdown', (e) => {
+    hold(true);
+    try { fcHud.reset.setPointerCapture(e.pointerId); } catch (err) { /* 合成イベント */ }
+  });
+  fcHud.reset.addEventListener('pointerup', () => hold(false));
+  fcHud.reset.addEventListener('pointercancel', () => hold(false));
+  fcHud.reset.addEventListener('pointerleave', () => hold(false));
+}
+function refreshFcHud() {
+  if (!fcHud.el) return;
+  const on = window.NES_UI ? window.NES_UI.isPowered() : false;
+  fcHud.power.classList.toggle('on', on);
+  if (window.NES_UI) fcHud.rom.textContent = window.NES_UI.getRomName() || '-';
+}
+
+// --- .nes をファミコンにドラッグ&ドロップしてカセット交換 ---
+{
+  const stage = document.getElementById('screen-wrap');
+  const isRom = (e) => Array.from(e.dataTransfer?.items || []).some((i) => i.kind === 'file');
+  stage.addEventListener('dragover', (e) => {
+    if (!document.body.classList.contains('room-on') || !isRom(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    document.body.classList.add('rom-drag');
+    refreshFcHud();
+  });
+  stage.addEventListener('dragleave', (e) => {
+    if (e.target === stage) document.body.classList.remove('rom-drag');
+  });
+  stage.addEventListener('drop', async (e) => {
+    if (!document.body.classList.contains('room-on')) return;
+    const file = e.dataTransfer?.files?.[0];
+    document.body.classList.remove('rom-drag');
+    if (!file) return;
+    e.preventDefault();
+    if (!window.NES_UI || !window.NES_UI.swapCartridge) return;
+    // 抜く -> 差す の演出つきで入れ替える
+    sfx.unplug();
+    const ok = await window.NES_UI.swapCartridge(file);
+    if (!ok) return;
+    if (cartItem && cartItem.reattach) cartItem.reattach();
+    reskinCassette();
+    sfx.plug();
+    refreshFcHud();
+  });
+}
 if (leakBtn) {
   leakBtn.addEventListener('click', () => {
     if (!leak) return;
@@ -653,7 +765,7 @@ function buildCrt() {
     outer.lineTo(-w / 2 + r, h / 2); outer.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
     outer.lineTo(-w / 2, -h / 2 + r); outer.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
     const hole = new THREE.Path();
-    const hw = SW * 0.5 + 0.003, hh = SH * 0.5 + 0.003, hr = 0.028;
+    const hw = SW * 0.5 + 0.003, hh = SH * 0.5 + 0.003, hr = 0.010;
     hole.moveTo(SX - hw + hr, SY - H / 2 - hh);
     hole.lineTo(SX + hw - hr, SY - H / 2 - hh);
     hole.quadraticCurveTo(SX + hw, SY - H / 2 - hh, SX + hw, SY - H / 2 - hh + hr);
@@ -679,31 +791,20 @@ function buildCrt() {
   screenTex.magFilter = THREE.NearestFilter;
   screenTex.minFilter = THREE.LinearFilter;
   screenTex.generateMipmaps = false;
-  screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(SW, SH, 40, 40), makeScreenMaterial());
-  {
-    // 放物面のふくらみ。中心が最大、外周でちょうど 0 になるので反り返らない
-    const BULGE = 0.011;
-    const p = screenMesh.geometry.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const u = p.getX(i) / (SW / 2), v = p.getY(i) / (SH / 2);
-      const r2 = Math.min(1, (u * u + v * v) * 0.5);
-      p.setZ(i, BULGE * (1 - r2));
-    }
-    p.needsUpdate = true;
-    screenMesh.geometry.computeVertexNormals();
-  }
-  screenMesh.position.set(SX, SY, D / 2 - 0.002);
+  // 画面はフラット。ベゼルの前面とほぼ面一に置いて、枠に沈んで見えないようにする
+  screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(SW, SH, 2, 2), makeScreenMaterial());
+  screenMesh.position.set(SX, SY, D / 2 + 0.007);
   g.add(screenMesh);
 
   // ガラス面の映り込み (うっすら)
   const glass = new THREE.Mesh(
-    screenMesh.geometry.clone(),
+    new THREE.PlaneGeometry(SW, SH, 1, 1),
     new THREE.MeshPhysicalMaterial({
       color: 0x000000, roughness: 0.08, metalness: 0,
       transparent: true, opacity: 0.07, transmission: 0, clearcoat: 1,
     })
   );
-  glass.position.set(SX, SY, D / 2 + 0.001);
+  glass.position.set(SX, SY, D / 2 + 0.0082);
   g.add(glass);
 
   // 画面の光がまわりを照らす (青すぎると部屋全体が青くなるので控えめに)
@@ -734,6 +835,8 @@ let cartLabelText = '';
 function drawCartLabel(title) {
   const g = cartLabelCanvas.getContext('2d');
   const W = 384, H = 220;
+  const accent = '#' + new THREE.Color(cartColor).getHexString();
+  const accentDark = '#' + new THREE.Color(cartColor).multiplyScalar(0.72).getHexString();
   g.fillStyle = '#e9e1d0';
   g.fillRect(0, 0, W, H);
   // 上部のコードストライプ
@@ -749,17 +852,18 @@ function drawCartLabel(title) {
   g.textBaseline = 'middle';
   g.fillText('HVC', 20, 18);
   // タイトル
-  g.fillStyle = '#6E1A1A';
+  g.fillStyle = accentDark;
   g.font = 'bold 19px system-ui, sans-serif';
   g.fillText((title || 'CASSETTE').slice(0, 22), 90, 18);
   // 斜めの帯
-  g.fillStyle = '#8F2323';
+  g.fillStyle = accent;
   g.beginPath();
   g.moveTo(0, 84); g.lineTo(190, 84); g.lineTo(250, 144); g.lineTo(384, 48);
   g.lineTo(384, 74); g.lineTo(250, 170); g.lineTo(190, 110); g.lineTo(0, 110);
   g.closePath(); g.fill();
   // 帯にそったピンストライプ
-  g.strokeStyle = 'rgba(143,35,35,0.75)';
+  g.strokeStyle = accent;
+  g.globalAlpha = 0.75;
   g.lineWidth = 2;
   for (let i = 0; i < 3; i++) {
     g.beginPath();
@@ -767,14 +871,29 @@ function drawCartLabel(title) {
     g.lineTo(250, 186 + i * 8); g.lineTo(384, 90 + i * 10);
     g.stroke();
   }
+  g.globalAlpha = 1;
   cartLabelTex.needsUpdate = true;
+}
+
+// カセットの色は実機同様いろいろ。ROM ごとにランダムで決める
+const CART_COLORS = [
+  0x8f2323, 0x2f4f8f, 0x2f7a4a, 0x8f6f1f, 0x6a3a8f,
+  0x1f6f7a, 0xa8541f, 0x8f2f6a, 0x4a4a52, 0x7a1f1f,
+];
+let cartColor = CART_COLORS[0];
+function pickCartColor() {
+  cartColor = CART_COLORS[Math.floor(Math.random() * CART_COLORS.length)];
+  return cartColor;
 }
 
 function buildCassette() {
   // 原点 = カードエッジの下端 (= 傾きの支点)。シェルの底は y = EDGE_H。
   const grp = new THREE.Group();
-  const maroon = new THREE.MeshStandardMaterial({ color: 0x8f2323, roughness: 0.5 });
-  const maroonDark = new THREE.MeshStandardMaterial({ color: 0x6f1b1b, roughness: 0.55 });
+  const base = new THREE.Color(pickCartColor());
+  const maroon = new THREE.MeshStandardMaterial({ color: base, roughness: 0.5 });
+  const maroonDark = new THREE.MeshStandardMaterial({
+    color: base.clone().multiplyScalar(0.78), roughness: 0.55,
+  });
   const shellY = EDGE_H + CART_H / 2;
 
   // シェル本体
@@ -1163,6 +1282,123 @@ function stepPhysics(dt) {
   }
 }
 
+// カセットを別のソフトに差し替えたときは、色とラベルを引き直す
+function reskinCassette() {
+  if (!cassetteGroup) return;
+  const base = new THREE.Color(pickCartColor());
+  cassetteGroup.traverse((o) => {
+    if (!o.isMesh || !o.material || o.material.map) return;
+    if (o.material.color && o.material.color.getHex() !== 0xd8b24a) {
+      // 金メッキと基板以外をカセット色に
+      const hex = o.material.color.getHex();
+      if (hex !== 0x1d5c30 && hex !== 0xd8b24a) {
+        o.material.color.copy(hex === 0x5a1414 ? base.clone().multiplyScalar(0.62)
+          : (o.material.roughness > 0.52 ? base.clone().multiplyScalar(0.78) : base));
+      }
+    }
+  });
+  cartLabelText = document.getElementById('cart-label')?.textContent || '';
+  drawCartLabel(cartLabelText);
+}
+
+// ------------------------------------------------------------ 殺虫スプレー
+// カーソル(カメラ)にスプレー缶を持たせて、噴射でゴキブリを倒す
+const spray = { on: false, can: null, puffs: [], t: 0 };
+
+function buildSprayCan() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.032, 0.032, 0.16, 20),
+    new THREE.MeshStandardMaterial({ color: 0x2f7a3a, roughness: 0.35, metalness: 0.5 })
+  );
+  g.add(body);
+  const band = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.0325, 0.0325, 0.05, 20),
+    new THREE.MeshStandardMaterial({ color: 0xe8e2d0, roughness: 0.6 })
+  );
+  band.position.y = 0.01;
+  g.add(band);
+  const shoulder = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.018, 0.032, 0.03, 20),
+    new THREE.MeshStandardMaterial({ color: 0x2f7a3a, roughness: 0.35, metalness: 0.5 })
+  );
+  shoulder.position.y = 0.095;
+  g.add(shoulder);
+  const cap = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.019, 0.019, 0.028, 16),
+    new THREE.MeshStandardMaterial({ color: 0xd8d8dc, roughness: 0.5 })
+  );
+  cap.position.y = 0.124;
+  g.add(cap);
+  return g;
+}
+
+function initSpray() {
+  spray.can = buildSprayCan();
+  spray.can.position.set(0.16, -0.14, -0.34);
+  spray.can.rotation.set(-0.35, 0, -0.5);
+  spray.can.visible = false;
+  camera.add(spray.can);
+  scene.add(camera);          // カメラの子を描画するためシーンに入れる
+
+  // 噴射のパーティクル
+  const geo = new THREE.SphereGeometry(0.012, 6, 5);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xdff0e0, transparent: true, opacity: 0.5 });
+  for (let i = 0; i < 40; i++) {
+    const m = new THREE.Mesh(geo, mat.clone());
+    m.visible = false;
+    scene.add(m);
+    spray.puffs.push({ mesh: m, life: 0, vel: new THREE.Vector3() });
+  }
+}
+
+function setSprayMode(on) {
+  spray.on = on;
+  if (spray.can) spray.can.visible = on;
+  if (renderer) renderer.domElement.style.cursor = on ? 'crosshair' : '';
+}
+
+// 照準方向に噴射して、当たったゴキブリを倒す
+function doSpray(origin, dir) {
+  let n = 0;
+  for (const p of spray.puffs) {
+    if (p.life > 0 || n >= 12) continue;
+    n++;
+    p.life = 0.55 + Math.random() * 0.25;
+    p.mesh.visible = true;
+    p.mesh.scale.setScalar(0.4);
+    p.mesh.material.opacity = 0.55;
+    p.mesh.position.copy(origin);
+    p.vel.copy(dir).multiplyScalar(2.4 + Math.random() * 1.6);
+    p.vel.x += (Math.random() - 0.5) * 0.7;
+    p.vel.y += (Math.random() - 0.5) * 0.7;
+    p.vel.z += (Math.random() - 0.5) * 0.7;
+  }
+  // 噴射方向の細い円錐に入っているゴキブリを倒す
+  const v = new THREE.Vector3();
+  for (const r of roaches) {
+    if (!r.state.alive || r.state.dying) continue;
+    v.copy(r.object.position).sub(origin);
+    const along = v.dot(dir);
+    if (along < 0 || along > 3.2) continue;
+    const perp = v.addScaledVector(dir, -along).length();
+    if (perp < 0.10 + along * 0.06) r.kill();
+  }
+}
+
+function updateSpray(dt) {
+  for (const p of spray.puffs) {
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.vel.multiplyScalar(1 - dt * 3.5);
+    p.vel.y -= 0.7 * dt;
+    p.mesh.scale.multiplyScalar(1 + dt * 2.4);
+    p.mesh.material.opacity = Math.max(0, p.life * 0.7);
+    if (p.life <= 0) p.mesh.visible = false;
+  }
+}
+
 // ------------------------------------------- カセットのドラッグ + 傾きゲージ HUD
 const TILT_MAX = 6;
 
@@ -1277,19 +1513,28 @@ function bindPointer(canvas) {
     for (const it of phys.items) {
       if (it.obj === cassetteGroup) continue;
       const h = ray.intersectObject(it.obj, true);
-      if (h.length) return { what: it === crtItem ? 'crt' : 'thing', item: it, point: h[0].point };
+      if (!h.length) continue;
+      const what = it === crtItem ? 'crt' : (it === famItem ? 'famicom' : 'thing');
+      return { what, item: it, point: h[0].point };
     }
     return null;
   };
 
-  const placeCartHud = (e) => {
+  const placeHudAt = (el, e) => {
+    if (!el) return;
     const r = wrap.getBoundingClientRect();
-    const w = cartHud.el.offsetWidth || 172, h = cartHud.el.offsetHeight || 110;
+    const w = el.offsetWidth || 176, h = el.offsetHeight || 110;
     let x = e.clientX - r.left + 16, y = e.clientY - r.top + 16;
     x = Math.max(4, Math.min(r.width - w - 4, x));
     y = Math.max(4, Math.min(r.height - h - 4, y));
-    cartHud.el.style.left = x + 'px';
-    cartHud.el.style.top = y + 'px';
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+  };
+  const placeCartHud = (e) => placeHudAt(cartHud.el, e);
+  const showFcHud = (on, e) => {
+    if (!fcHud.el) return;
+    fcHud.el.classList.toggle('on', on);
+    if (on) { refreshFcHud(); placeHudAt(fcHud.el, e); }
   };
 
   const showCartHud = (on, e) => {
@@ -1302,6 +1547,13 @@ function bindPointer(canvas) {
   };
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (spray.on) {
+      // スプレーモード: 照準方向に噴射
+      setNdc(e);
+      doSpray(ray.ray.origin.clone().addScaledVector(ray.ray.direction, 0.35), ray.ray.direction.clone());
+      sfx.spray();
+      return;
+    }
     const hit = pick(e);
     if (!hit) return;
 
@@ -1320,6 +1572,7 @@ function bindPointer(canvas) {
       mode = 'plug';
       grabbedCable = hit.cable;
       cables.grab(grabbedCable);
+      sfx.unplug();
       hitPt.copy(hit.point);
       plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(_v).clone().negate(), hitPt);
       controls.enabled = false;
@@ -1395,15 +1648,19 @@ function bindPointer(canvas) {
       hovering = what;
       showCartHud(what === 'cart', e);
       showRoomHud(what === 'crt');
-      canvas.style.cursor = what ? 'grab' : '';
+      showFcHud(what === 'famicom', e);
+      canvas.style.cursor = spray.on ? 'crosshair' : (what ? 'grab' : '');
     } else if (what === 'cart') {
       placeCartHud(e);
+    } else if (what === 'famicom') {
+      placeHudAt(fcHud.el, e);
     }
   });
 
   const end = () => {
     if (mode === 'plug' && grabbedCable) {
-      cables.release(grabbedCable);
+      const wasIn = cables.release(grabbedCable);
+      if (wasIn) sfx.plug();
       grabbedCable = null;
     }
     if (mode === 'throw' && phys.grab) {
@@ -1423,6 +1680,7 @@ function bindPointer(canvas) {
     hovering = null;
     showCartHud(false);
     showRoomHud(false);
+    showFcHud(false);
   });
 }
 
@@ -1601,12 +1859,13 @@ function init() {
   controls.maxPolarAngle = Math.PI * 0.52;
   controls.update();
 
+  initSpray();
   bindPointer(renderer.domElement);
   // デバッグ用フック (コンソールから触れるように)
   window.__room = {
     THREE, CANNON, renderer, scene, camera, controls, placeholders, drawOsd,
     material: () => screenMat, phys, setInsertion, getInsertion: () => insertion,
-    cables, roaches, leak, can, spawnRoach,
+    cables, roaches, leak, can, spawnRoach, spray, doSpray, setSprayMode, sfx,
   };
   resize();
   new ResizeObserver(resize).observe(wrap);
@@ -1632,6 +1891,7 @@ function syncCablePower() {
     lastTvPower = tv;
     if (screenMat) screenMat.uniforms.power.value = tv ? 1 : 0;
     if (lights && lights.glow) lights.glow.visible = tv;
+    if (tv) sfx.tvOn(); else sfx.tvOff();
   }
   const fcp = cables.isConnected('fc-power');
   if (fcp !== lastFcPower) {
@@ -1639,7 +1899,7 @@ function syncCablePower() {
     // AC アダプタを抜いたら本体の電源が落ちる (挿し直したら入る)
     const pw = document.getElementById('btn-power');
     const on = pw && pw.classList.contains('power-on');
-    if (pw && on !== fcp) pw.click();
+    if (pw && on !== fcp) { pw.click(); sfx.powerSwitch(fcp); }
   }
 }
 
@@ -1662,6 +1922,7 @@ function loop() {
   if (cables) cables.update(dt);
   syncCablePower();
   for (const r of roaches) r.update(dt);
+  updateSpray(dt);
   if (leak) leak.update(dt);
   if (can) {
     can.update(dt);

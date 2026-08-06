@@ -875,6 +875,46 @@
     border-color: #3a4a20;
     color: #d3ff9f;
   }
+  /* 3D モードの操作オーバーレイ (左下) */
+  #room-toolbar {
+    display: none;
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    z-index: 5;
+    flex-direction: column;
+    gap: 5px;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  body.room-on #room-toolbar { display: flex; }
+  .rt-row { display: flex; gap: 5px; }
+  .rt-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(18, 16, 14, 0.72);
+    border: 1px solid rgba(180, 165, 130, 0.35);
+    border-radius: 5px;
+    color: #ded6c3;
+    font: inherit;
+    font-size: 10px;
+    padding: 5px 9px;
+    cursor: pointer;
+    backdrop-filter: blur(3px);
+    white-space: nowrap;
+  }
+  .rt-btn:hover { background: rgba(40, 36, 30, 0.85); border-color: rgba(210, 195, 160, 0.6); }
+  .rt-btn:active { transform: translateY(1px); }
+  .rt-btn.on { background: rgba(60, 90, 30, 0.65); border-color: #6f9c3a; color: #d3ff9f; }
+  .rt-btn.held { background: rgba(143, 35, 35, 0.75); border-color: #c05555; color: #ffd9d9; }
+  .rt-icon { font-size: 13px; padding: 4px 8px; }
+  .rt-lamp {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #441111;
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.6);
+  }
+  #rt-power.on .rt-lamp { background: #ff4b3e; box-shadow: 0 0 6px #ff4b3e; }
   /* カセットにホバーしたときの傾きゲージ */
   #cart-hud {
     display: none;
@@ -892,6 +932,33 @@
     backdrop-filter: blur(3px);
   }
   #cart-hud.on { display: block; }
+  /* ファミコンにホバーしたときの HUD */
+  #fc-hud {
+    display: none;
+    position: absolute;
+    z-index: 6;
+    width: 178px;
+    background: rgba(16, 20, 8, 0.86);
+    border: 1px solid #3a4a20;
+    border-radius: 6px;
+    padding: 7px 8px 8px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    color: #9fdf6f;
+    backdrop-filter: blur(3px);
+  }
+  #fc-hud.on { display: block; }
+  #fc-rom {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #d3ff9f;
+  }
+  .fc-btns { display: flex; gap: 5px; margin: 6px 0 5px; }
+  .fc-btns .rt-btn { flex: 1 1 0; justify-content: center; font-size: 9px; padding: 5px 4px; }
+  #fc-hint { color: #6f8a4a; font-size: 9px; line-height: 1.4; }
+  body.rom-drag #fc-hud { display: block; border-color: #9fdf6f; box-shadow: 0 0 0 2px rgba(159,223,111,0.35); }
   .ch-row { display: flex; justify-content: space-between; align-items: baseline; }
   #ch-deg { font-size: 13px; font-weight: bold; color: #d3ff9f; }
   #ch-gauge {
@@ -1119,6 +1186,30 @@
   <div id="stage">
     <div id="screen-wrap">
       <canvas id="screen" width="256" height="240"></canvas>
+      <div id="room-toolbar">
+        <div class="rt-row">
+          <button id="rt-power" class="rt-btn" title="Power"><i class="rt-lamp"></i><span id="lbl-rt-power">POWER</span></button>
+          <button id="rt-reset" class="rt-btn" title="Reset">⟳ <span id="lbl-rt-reset">RESET</span></button>
+        </div>
+        <div class="rt-row">
+          <button id="rt-grab" class="rt-btn" title="Grab / throw things">✋ <span id="lbl-rt-grab">GRAB</span></button>
+          <button id="rt-tidy" class="rt-btn" title="Tidy up">🧹 <span id="lbl-rt-tidy">TIDY</span></button>
+        </div>
+        <div class="rt-row rt-palette">
+          <button id="rt-roach" class="rt-btn rt-icon" title="Roach">🪳</button>
+          <button id="rt-spray" class="rt-btn rt-icon" title="Bug spray">🧴</button>
+          <button id="rt-leak" class="rt-btn rt-icon" title="Leak">💧</button>
+          <button id="rt-can" class="rt-btn rt-icon" title="Soda">🥤</button>
+        </div>
+      </div>
+      <div id="fc-hud">
+        <div class="ch-row"><span id="fc-title">ファミコン</span><span id="fc-rom">-</span></div>
+        <div class="fc-btns">
+          <button id="fc-power" class="rt-btn"><i class="rt-lamp"></i>POWER</button>
+          <button id="fc-reset" class="rt-btn">⟳ RESET</button>
+        </div>
+        <div id="fc-hint">.nes をここにドロップでカセット交換</div>
+      </div>
       <div id="cart-hud">
         <div class="ch-row"><span id="ch-title">カセットの傾き</span><span id="ch-deg">0.0°</span></div>
         <div id="ch-gauge"><div id="ch-center"></div><div id="ch-needle"></div></div>
@@ -1153,13 +1244,6 @@
           </div>
           <label class="hud-check"><input type="checkbox" id="osd-on" checked><span id="lbl-osd">OSD</span></label>
           <button id="hud-mute" class="hud-btn">🔇 <span id="lbl-mute">ミュート</span></button>
-          <button id="hud-phys" class="hud-btn">🌀 <span id="lbl-phys">ぶん投げ</span></button>
-          <button id="hud-reset" class="hud-btn">🧹 <span id="lbl-tidy">片付ける</span></button>
-          <div class="hud-btn-row">
-            <button id="hud-roach" class="hud-btn hud-btn-s" title="ゴキブリ">🪳</button>
-            <button id="hud-leak" class="hud-btn hud-btn-s" title="雨漏り">💧</button>
-            <button id="hud-can" class="hud-btn hud-btn-s" title="ジュース">🥤</button>
-          </div>
           <div id="hud-read"></div>
         </div>
       </div>
