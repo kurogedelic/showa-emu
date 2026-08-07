@@ -1650,33 +1650,27 @@ function bindPointer(canvas) {
     updateCartHud(v);
   };
 
+  // 一番手前のものを拾う。プラグやスイッチのような小物は少しだけ優遇する
   const pick = (e) => {
     setNdc(e);
-    if (cables) {                       // プラグを最優先で拾う (小さいので)
-      const h = ray.intersectObjects(cables.plugMeshes, false);
-      if (h.length) return { what: 'plug', cable: h[0].object.userData.cable, point: h[0].point };
-    }
-    if (convSwitch) {
-      const h = ray.intersectObject(convSwitch, false);
-      if (h.length) return { what: 'switch', point: h[0].point };
-    }
-    for (const r of roaches) {
-      if (!r.object.visible) continue;
-      const h = ray.intersectObject(r.object, true);
-      if (h.length) return { what: 'roach', roach: r, point: h[0].point };
-    }
-    if (cassetteGroup) {
-      const h = ray.intersectObject(cassetteGroup, true);
-      if (h.length) return { what: 'cart', point: h[0].point };
-    }
+    let best = null;
+    const consider = (obj, what, extra, bias = 0) => {
+      if (!obj) return;
+      const h = ray.intersectObject(obj, true);
+      if (!h.length) return;
+      const d = h[0].distance - bias;
+      if (!best || d < best.d) best = Object.assign({ d, what, point: h[0].point }, extra);
+    };
+    if (cables) for (const p of cables.plugMeshes) consider(p, 'plug', { cable: p.userData.cable }, 0.28);
+    consider(convSwitch, 'switch', {}, 0.22);
+    for (const r of roaches) if (r.object.visible) consider(r.object, 'roach', { roach: r }, 0.22);
+    consider(cassetteGroup, 'cart', {}, 0.10);
     for (const it of phys.items) {
-      if (it.obj === cassetteGroup) continue;
-      const h = ray.intersectObject(it.obj, true);
-      if (!h.length) continue;
+      if (it.isWall || it.obj === cassetteGroup) continue;   // 壁は掴めない (ぶつけて倒すだけ)
       const what = it === crtItem ? 'crt' : (it === famItem ? 'famicom' : 'thing');
-      return { what, item: it, point: h[0].point };
+      consider(it.obj, what, { item: it });
     }
-    return null;
+    return best;
   };
 
   const placeHudAt = (el, e) => {
