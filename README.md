@@ -30,7 +30,8 @@ bundled in this repo. Use **Open ROM** in the toolbar to load your own `.nes` fi
   blue sky.
 - **A working Zapper.** The light gun is implemented in the core — `$4017` returns the trigger and
   light-sense bits, and the JS side samples the framebuffer where you are aiming, so real light gun
-  games actually respond. Right-click fires a physical pellet that knocks things over.
+  games actually respond. Hold the right button and it fires a continuous beam that shoves whatever it lands on
+  (and fries any cockroach it crosses).
 - **Room props.** Cockroaches that scuttle across the floor *and up the walls* (one more per click,
   and a can of bug spray to deal with them), a ceiling leak, and a can of orange soda you can knock
   over — the puddle reaching the console gums up the contacts.

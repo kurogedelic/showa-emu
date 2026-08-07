@@ -122,10 +122,11 @@ export const sfx = {
     tone(1400, 0.09, { gain: 0.2, type: 'square', to: 180 });
     noise(0.07, { gain: 0.18, freq: 3200, q: 0.8, sweepTo: 600 });
   },
-  // 実弾の発砲音
-  gunshot() {
-    noise(0.22, { gain: 0.4, type: 'lowpass', freq: 4200, q: 0.6, sweepTo: 260 });
-    tone(160, 0.14, { gain: 0.3, type: 'square', to: 55 });
+  // 光線の発射音 (ピシュン)
+  beam() {
+    tone(2400, 0.16, { gain: 0.22, type: 'sawtooth', to: 220 });
+    tone(1200, 0.10, { gain: 0.12, type: 'square', to: 140, delay: 0.02 });
+    noise(0.14, { gain: 0.14, type: 'highpass', freq: 2600, q: 0.5, sweepTo: 900 });
   },
   // 一升瓶をあおる
   gulp() {

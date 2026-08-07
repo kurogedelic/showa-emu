@@ -28,6 +28,7 @@ let cassetteGroup, running = false, started = false;
 let standItem = null, crtItem = null, famItem = null, cartItem = null, convItem = null, canItem = null;
 let cables = null, roach = null, leak = null, can = null, tarai = null, taraiItem = null;
 let bottle = null, bottleItem = null;
+let skyMesh = null, groundMesh = null;
 let drunk = 0;            // 酔い 0..1 (時間でさめる)
 const roaches = [];
 const ROACH_MAX = 16;
@@ -823,22 +824,22 @@ function buildOutside() {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
 
-  const sky = new THREE.Mesh(
+  skyMesh = new THREE.Mesh(
     new THREE.SphereGeometry(28, 24, 16),
     new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false })
   );
-  sky.position.y = 6;
-  scene.add(sky);
+  skyMesh.position.y = 6;
+  scene.add(skyMesh);
 
   // 外の地面 (部屋の床より少しだけ下)
-  const ground = new THREE.Mesh(
+  groundMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(56, 56),
     new THREE.MeshStandardMaterial({ color: 0x6f7a52, roughness: 1 })
   );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.02;
-  ground.receiveShadow = true;
-  scene.add(ground);
+  groundMesh.rotation.x = -Math.PI / 2;
+  groundMesh.position.y = -0.02;
+  groundMesh.receiveShadow = true;
+  scene.add(groundMesh);
 }
 
 function buildTvStand() {
@@ -1671,6 +1672,7 @@ function initZapper() {
 
 function setZapperMode(on) {
   zapper.on = on;
+  if (!on && beam.mesh) setBeamFiring(false);
   if (zapper.gun) zapper.gun.visible = on;
   if (renderer) renderer.domElement.style.cursor = on ? 'crosshair' : '';
   if (!on && window.NES_UI) window.NES_UI.setZapper(false, false, null);
@@ -1687,68 +1689,112 @@ function aimZapper(origin, dir) {
   zapper.gun.rotateX(0.12);
 }
 
-// 実弾。右クリックで飛んでいって、当たったものを吹き飛ばす
-const bullets = [];
-const BULLET_R = 0.007;
+// 光線。右ボタンを押している間ずっと出る。当たったものは押されて動く
+const beam = {
+  mesh: null, glow: null, flash: null,
+  firing: false, origin: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, -1),
+  hit: null, sndAt: 0,
+};
 
-function initBullets() {
-  const geo = new THREE.SphereGeometry(BULLET_R, 8, 6);
-  const mat = new THREE.MeshStandardMaterial({ color: 0xb08d3a, roughness: 0.3, metalness: 0.9 });
-  for (let i = 0; i < 12; i++) {
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.visible = false;
-    mesh.castShadow = true;
-    scene.add(mesh);
-    const body = new CANNON.Body({
-      mass: 0.12, shape: new CANNON.Sphere(BULLET_R),
-      type: CANNON.Body.DYNAMIC, allowSleep: false,
-    });
-    body.collisionResponse = true;
-    phys.world.addBody(body);
-    const b = { mesh, body, life: 0 };
-    body.addEventListener('collide', (e) => {
-      if (b.life <= 0) return;
-      const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
-      if (v > 1) sfx.thud(Math.min(1, v / 8));
-    });
-    bullets.push(b);
-    body.sleep();
+function initBeam() {
+  const geo = new THREE.CylinderGeometry(0.007, 0.002, 1, 10, 1, true);
+  geo.translate(0, 0.5, 0);              // 原点を根本に
+  beam.mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color: 0xfff0b0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+    depthWrite: false, side: THREE.DoubleSide,
+  }));
+  beam.mesh.visible = false;
+  scene.add(beam.mesh);
+
+  beam.glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    color: 0xfff4c0, transparent: true, opacity: 0, depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  }));
+  beam.glow.visible = false;
+  scene.add(beam.glow);
+
+  beam.flash = new THREE.PointLight(0xffe9a0, 0, 2.5, 2);
+  scene.add(beam.flash);
+}
+
+// レイが当たったオブジェクトから、対応する剛体を探す
+function itemOf(obj) {
+  for (let o = obj; o; o = o.parent) {
+    const it = phys.items.find((x) => x.obj === o);
+    if (it) return it;
+  }
+  return null;
+}
+
+function setBeamFiring(on) {
+  beam.firing = on;
+  beam.mesh.visible = on;
+  beam.glow.visible = on;
+  if (!on) {
+    beam.mesh.material.opacity = 0;
+    beam.glow.material.opacity = 0;
+    beam.flash.intensity = 0;
+    beam.hit = null;
   }
 }
 
-function fireBullet(origin, dir) {
-  const b = bullets.find((x) => x.life <= 0);
-  if (!b) return;
-  b.life = 5;
-  b.mesh.visible = true;
-  b.body.wakeUp();
-  b.body.position.set(origin.x, origin.y, origin.z);
-  b.body.velocity.set(dir.x * 14, dir.y * 14 + 0.4, dir.z * 14);
-  b.body.angularVelocity.set(0, 0, 0);
-  sfx.gunshot();
-  // 弾道の近くにいるゴキブリは即死
-  const v = new THREE.Vector3();
-  for (const r of roaches) {
-    if (!r.state.alive || r.state.dying) continue;
-    v.copy(r.object.position).sub(origin);
-    const along = v.dot(dir);
-    if (along < 0 || along > 6) continue;
-    if (v.addScaledVector(dir, -along).length() < 0.05) r.kill();
-  }
-}
+const _beamQ = new THREE.Quaternion();
+const _rc = new THREE.Raycaster();
+const _bv = new THREE.Vector3();
 
-function updateBullets(dt) {
-  for (const b of bullets) {
-    if (b.life <= 0) continue;
-    b.life -= dt;
-    b.mesh.position.set(b.body.position.x, b.body.position.y, b.body.position.z);
-    if (b.life <= 0) {
-      b.mesh.visible = false;
-      b.body.velocity.setZero();
-      b.body.position.set(0, -5, 0);
-      b.body.sleep();
+function updateBeam(dt, now) {
+  if (!beam.firing) return;
+  const origin = beam.origin, dir = beam.dir;
+
+  // どこに当たっているか
+  _rc.set(origin, dir);
+  _rc.near = 0.01;
+  _rc.far = 12;
+  _rc.camera = camera;                   // スプライトの判定に必要
+  const hits = _rc.intersectObjects(scene.children, true)
+    .filter((h) => h.object.visible && !h.object.isSprite &&
+      h.object !== beam.mesh && h.object !== skyMesh && h.object !== groundMesh);
+  const first = hits.length ? hits[0] : null;
+  const dist = first ? first.distance : 8;
+  beam.hit = first ? first.point.clone() : null;
+
+  // 見た目 (少し脈打たせる)
+  const puls = 0.82 + 0.18 * Math.sin(now / 26);
+  beam.mesh.position.copy(origin);
+  beam.mesh.quaternion.copy(_beamQ.setFromUnitVectors(_aimUp, dir));
+  beam.mesh.scale.set(puls, dist, puls);
+  beam.mesh.material.opacity = 0.75 * puls;
+  beam.glow.position.copy(origin).addScaledVector(dir, dist);
+  beam.glow.scale.setScalar(0.05 + 0.03 * puls);
+  beam.glow.material.opacity = 0.85 * puls;
+  beam.flash.position.copy(origin).addScaledVector(dir, 0.06);
+  beam.flash.intensity = 2.6 * puls;
+
+  // 当たり判定: 剛体なら押される、壁は焦げるだけ、ゴキブリは焼ける
+  if (first) {
+    const it = itemOf(first.object);
+    if (it && it.body.type === CANNON.Body.DYNAMIC) {
+      const imp = new CANNON.Vec3(dir.x, dir.y + 0.12, dir.z);
+      imp.scale(2.6 * dt * Math.max(0.4, it.body.mass), imp);
+      const rel = new CANNON.Vec3(
+        first.point.x - it.body.position.x,
+        first.point.y - it.body.position.y,
+        first.point.z - it.body.position.z
+      );
+      it.body.wakeUp();
+      it.body.applyImpulse(imp, rel);
     }
   }
+  for (const r of roaches) {
+    if (!r.state.alive || r.state.dying) continue;
+    _bv.copy(r.object.position).sub(origin);
+    const along = _bv.dot(dir);
+    if (along < 0 || along > dist + 0.1) continue;
+    if (_bv.addScaledVector(dir, -along).length() < 0.05) r.kill();
+  }
+
+  // 撃っている間、断続的に音を出す
+  if (now - beam.sndAt > 140) { beam.sndAt = now; sfx.beam(); }
 }
 
 // 照準がブラウン管のどこを指しているか (0-1)。外していれば null
@@ -2018,6 +2064,10 @@ function bindPointer(canvas) {
       setNdc(e);
       aimZapper(ray.ray.origin, ray.ray.direction);
       zapper.aim = zapperAim(ray);
+      if (beam.firing) {
+        beam.origin.set(0, 0, 0.14).applyQuaternion(zapper.gun.quaternion).add(zapper.gun.position);
+        beam.dir.copy(ray.ray.direction);
+      }
       return;
     }
     if (mode === 'cart') {
@@ -2064,16 +2114,21 @@ function bindPointer(canvas) {
     controls.enabled = true;
     canvas.style.cursor = hovering ? 'grab' : '';
   };
-  // 右クリック: 実弾を撃つ (光線銃モードのときだけ)
-  canvas.addEventListener('contextmenu', (e) => {
-    if (!zapper.on) return;
-    e.preventDefault();
+  // 右ボタン: 押している間ずっと光線を出す (光線銃モードのときだけ)
+  const aimBeam = (e) => {
     setNdc(e);
     aimZapper(ray.ray.origin, ray.ray.direction);
-    const muzzle = new THREE.Vector3(0, 0, 0.14)
-      .applyQuaternion(zapper.gun.quaternion).add(zapper.gun.position);
-    fireBullet(muzzle, ray.ray.direction.clone());
+    beam.origin.set(0, 0, 0.14).applyQuaternion(zapper.gun.quaternion).add(zapper.gun.position);
+    beam.dir.copy(ray.ray.direction);
+  };
+  canvas.addEventListener('contextmenu', (e) => { if (zapper.on) e.preventDefault(); });
+  canvas.addEventListener('pointerdown', (e) => {
+    if (!zapper.on || e.button !== 2) return;
+    aimBeam(e);
+    setBeamFiring(true);
+    canvas.setPointerCapture(e.pointerId);
   });
+  window.addEventListener('pointerup', (e) => { if (e.button === 2) setBeamFiring(false); });
   canvas.addEventListener('pointerup', end);
   canvas.addEventListener('pointercancel', end);
   canvas.addEventListener('pointerleave', () => {
@@ -2298,7 +2353,7 @@ function init() {
 
   initSpray();
   initZapper();
-  initBullets();
+  initBeam();
   bindPointer(renderer.domElement);
   // 既定で掴めるようにしておく
   setPhysicsEnabled(true);
@@ -2308,7 +2363,7 @@ function init() {
     THREE, CANNON, renderer, scene, camera, controls, placeholders, drawOsd,
     material: () => screenMat, phys, setInsertion, getInsertion: () => insertion,
     cables, roaches, leak, can, spawnRoach, spray, doSpray, setSprayMode, sfx,
-    zapper, setZapperMode, zapperAim, bullets, fireBullet,
+    zapper, setZapperMode, zapperAim, beam, setBeamFiring, updateBeam,
     openDrinkModal, startDrinking, getDrunk: () => drunk,
   };
   resize();
@@ -2367,7 +2422,7 @@ function loop() {
   syncCablePower();
   for (const r of roaches) r.update(dt);
   updateSpray(dt);
-  updateBullets(dt);
+  updateBeam(dt, now);
   updateDrunk(dt, now);
   if (leak) leak.update(dt);
   if (can) {
