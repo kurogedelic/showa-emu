@@ -44,7 +44,7 @@ Hover the **television** for its own settings (UHF gain, tuning, CRT effect, OSD
 Hover the **console** for power, reset and the loaded ROM — drop a `.nes` file on it to swap the
 cartridge. Hover the **cartridge** for a tilt and contact gauge. The overlay at the bottom left has
 power, reset, grab mode, tidy up, the room light, and the prop palette (roach, bug spray, ceiling
-leak, soda can, falling washtub, light gun). Drag anywhere else to orbit. There is also a bottle of
+leak, soda can, falling washtub, light gun). Drag anywhere else to orbit; middle-drag pans. There is also a bottle of
 sake on the floor; clicking it asks whether you would like to start drinking, and saying yes warps
 the field of view and reverses the D-pad until you sober up.
 

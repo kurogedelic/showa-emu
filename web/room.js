@@ -2284,6 +2284,12 @@ function init() {
   controls.minDistance = 0.25;
   controls.maxDistance = 3.4;
   controls.maxPolarAngle = Math.PI * 0.52;
+  // 左=回転 / 中=パン。右は光線銃の実弾に使うのでカメラ操作から外す
+  controls.mouseButtons = {
+    LEFT: THREE.MOUSE.ROTATE,
+    MIDDLE: THREE.MOUSE.PAN,
+    RIGHT: null,
+  };
   controls.update();
 
   initSpray();
