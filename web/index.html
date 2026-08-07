@@ -792,9 +792,7 @@
   #room-hud {
     display: none;
     position: absolute;
-    top: 8px;
-    left: 8px;
-    z-index: 4;
+    z-index: 6;
     width: 208px;
     background: rgba(16, 20, 8, 0.78);
     border: 1px solid #3a4a20;
@@ -805,24 +803,6 @@
     backdrop-filter: blur(3px);
   }
   body.room-on #room-hud.on { display: block; }
-  /* テレビにホバーするまでは小さなヒントだけ出しておく */
-  #hud-peek {
-    display: none;
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    z-index: 3;
-    padding: 3px 7px;
-    border-radius: 4px;
-    background: rgba(16, 20, 8, 0.55);
-    border: 1px solid #3a4a20;
-    color: #7fae5f;
-    font-family: ui-monospace, Menlo, monospace;
-    font-size: 9px;
-    pointer-events: none;
-  }
-  body.room-on #hud-peek { display: block; }
-  body.room-on #room-hud.on ~ #hud-peek { display: none; }
   #hud-head { display: flex; align-items: center; justify-content: space-between; }
   #hud-title { font-size: 11px; font-weight: bold; color: #d3ff9f; }
   #hud-toggle {

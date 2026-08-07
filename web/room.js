@@ -34,8 +34,8 @@ function spawnRoach() {
   if (!r) {
     if (roaches.length >= ROACH_MAX) r = roaches[0];
     else {
-      r = createRoach(scene, { w: ROOM_W, d: ROOM_D });
-      r.state.enabled = false;        // 勝手に湧くのは 1 匹目だけ
+      r = createRoach(scene, { w: ROOM_W, d: ROOM_D, h: ROOM_H });
+      r.state.enabled = false;
       roaches.push(r);
     }
   }
@@ -764,9 +764,10 @@ function buildRoom() {
     b.position.set(0, -0.875 + (1.75 / 7) * i, 0.012);
     shoji.add(b);
   }
-  shoji.position.set(ROOM_W / 2 - 0.02, 1.0, 0.35);
-  shoji.rotation.y = -Math.PI / 2;
-  room.add(shoji);
+  // 右の壁に貼り付ける (壁が倒れれば障子も一緒に倒れる)
+  const rightWall = walls[2];
+  shoji.position.set(0.35, 1.0 - ROOM_H / 2, WALL_T / 2 + 0.02);
+  rightWall.add(shoji);
 
   // 天井 (竿縁天井)
   const ceil = new THREE.Mesh(
@@ -1690,6 +1691,12 @@ function bindPointer(canvas) {
     if (on) refreshFcHud();
     fcHudToggle(on);
   };
+  const showTvHud = (on, e) => {
+    if (!hud.panel) return;
+    // 出るときだけ位置を決める (触っている最中に動かない)
+    if (on && !hud.panel.classList.contains('on')) placeHudAt(hud.panel, e);
+    showRoomHud(on);
+  };
 
   const showCartHud = (on, e) => {
     if (!cartHud.el) return;
@@ -1806,7 +1813,7 @@ function bindPointer(canvas) {
     if (what !== hovering) {
       hovering = what;
       showCartHud(what === 'cart', e);
-      showRoomHud(what === 'crt');
+      showTvHud(what === 'crt', e);
       showFcHud(what === 'famicom', e);
       canvas.style.cursor = spray.on ? 'crosshair' : (what ? 'grab' : '');
     } else if (what === 'cart') {
@@ -1840,6 +1847,7 @@ function bindPointer(canvas) {
     showCartHud(false);
     showRoomHud(false);
     showFcHud(false);
+    fcHudToggle(false);
   });
 }
 
@@ -1989,7 +1997,8 @@ function init() {
 
   // --- 小物: ゴキブリ / 雨漏り / ジュース ---
   // 1匹目だけは勝手に出てくる。ボタンを押すたびに増える
-  roach = createRoach(scene, { w: ROOM_W, d: ROOM_D });
+  roach = createRoach(scene, { w: ROOM_W, d: ROOM_D, h: ROOM_H });
+  roach.setEnabled(false);        // 勝手には出てこない (ボタンを押したときだけ)
   roaches.push(roach);
   leak = createLeak(scene, { x: -0.55, z: TV_Z + 0.75, ceilingY: ROOM_H });
   leak.setEnabled(false);
