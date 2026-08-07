@@ -391,16 +391,19 @@ function applyHud() {
 }
 
 // ホバーで出る HUD。HUD の上にカーソルがある間は消さず、離れて少し経ってから閉じる
-function autoHideHud(el, delay = 500) {
+// on=false のとき now=true なら即座に閉じる。
+// 遅延は「対象から HUD へカーソルを移す一瞬」を拾うためだけに使う。
+function autoHideHud(el, delay = 220) {
   if (!el) return () => {};
   let timer = 0;
-  const show = (on) => {
+  const show = (on, now) => {
     clearTimeout(timer);
     if (on) el.classList.add('on');
+    else if (now) el.classList.remove('on');
     else timer = setTimeout(() => el.classList.remove('on'), delay);
   };
   el.addEventListener('pointerenter', () => show(true));
-  el.addEventListener('pointerleave', () => show(false));
+  el.addEventListener('pointerleave', () => show(false, true));   // HUD から出たら即消す
   return show;
 }
 const showRoomHud = autoHideHud(hud.panel);
@@ -1883,17 +1886,16 @@ function bindPointer(canvas) {
     el.style.top = y + 'px';
   };
   const placeCartHud = (e) => placeHudAt(cartHud.el, e);
-  const showFcHud = (on, e) => {
+  const showFcHud = (on, e, now) => {
     if (!fcHud.el) return;
     if (on && !fcHud.el.classList.contains('on')) placeHudAt(fcHud.el, e);
     if (on) refreshFcHud();
-    fcHudToggle(on);
+    fcHudToggle(on, now);
   };
-  const showTvHud = (on, e) => {
+  const showTvHud = (on, e, now) => {
     if (!hud.panel) return;
-    // 出るときだけ位置を決める (触っている最中に動かない)
     if (on && !hud.panel.classList.contains('on')) placeHudAt(hud.panel, e);
-    showRoomHud(on);
+    showRoomHud(on, now);
   };
 
   const showCartHud = (on, e) => {
@@ -2032,8 +2034,8 @@ function bindPointer(canvas) {
     if (what !== hovering) {
       hovering = what;
       showCartHud(what === 'cart', e);
-      showTvHud(what === 'crt', e);
-      showFcHud(what === 'famicom', e);
+      showTvHud(what === 'crt', e, true);     // 別のものに移ったら即消す
+      showFcHud(what === 'famicom', e, true);
       canvas.style.cursor = spray.on ? 'crosshair' : (what ? 'grab' : '');
     } else if (what === 'cart') {
       placeCartHud(e);
