@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<title>showa-emu — Famicom in a tatami room</title>
+<style>
+  :root {
+    --fc-cream: #E9E1D0;    /* 本体の白 */
+    --fc-red: #8F2323;      /* 本体のマルーン */
+    --fc-red-dark: #6E1A1A;
+    --fc-gold: #C9A64B;     /* コントローラの金プレート */
+    --fc-dark: #2B2622;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: #111;
+    color: #eee;
+    font-family: system-ui, sans-serif;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  /* 3x3 スクロールレイアウト: 中央=画面 / 上=ツールバー / 下=端子 / 左右=デバッグ
+     周辺パネルは画面外に置き、スクロール(スワイプ)で四方から引き出す */
+  #app {
+    display: grid;
+    grid-template-columns: max-content 100% max-content;
+    grid-template-rows: max-content 100% max-content;
+    grid-template-areas:
+      ".    top    ."
+      "left center right"
+      ".    bottom .";
+    height: 100%;
+    background: #111;
+    overflow: auto;
+    scroll-snap-type: both proximity;
+    overscroll-behavior: contain;
+    touch-action: pan-x pan-y;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  #app::-webkit-scrollbar { width: 0; height: 0; }
+  #app:fullscreen { background: #000; }
+  #stage {
+    grid-area: center;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    background: #111;
+    scroll-snap-align: center center;
+  }
+  /* 各パネルのスナップ位置 (block, inline) */
+  #toolbar    { grid-area: top;    scroll-snap-align: start start; }
+  #cartbus    { grid-area: bottom; scroll-snap-align: end start; }
+  #debug-left { grid-area: left;   scroll-snap-align: center start; }
+  #debug      { grid-area: right;  scroll-snap-align: center end; }
+  /* 端に隠れているパネルを示すタブ (タップで1段スクロール) */
+  .edge-hint {
+    display: none;
+    position: fixed;
+    z-index: 30;
+    background: rgba(143, 35, 35, 0.75);
+    color: var(--fc-cream);
+    border: none;
+    font-size: 10px;
+    line-height: 1;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 4px 12px;
+  }
+  .edge-hint.on { display: block; }
+  #hint-up    { top: 0;  left: 50%; transform: translateX(-50%); border-radius: 0 0 8px 8px; }
+  #hint-down  { bottom: 0; right: 6px; border-radius: 8px 8px 0 0; }
+  #hint-left  { left: 0;  top: 50%; transform: translateY(-50%); border-radius: 0 8px 8px 0; padding: 12px 4px; }
+  #hint-right { right: 0; top: 50%; transform: translateY(-50%); border-radius: 8px 0 0 8px; padding: 12px 4px; }
+  #toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px;
+    background: var(--fc-cream);
+    border-bottom: 4px solid var(--fc-red);
+    flex-wrap: wrap;
+  }
+  #toolbar label {
+    background: var(--fc-red);
+    color: var(--fc-cream);
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 2px 0 var(--fc-red-dark);
+  }
+  #toolbar input[type=file] { display: none; }
+  #toolbar button {
+    background: var(--fc-red);
+    color: var(--fc-cream);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 2px 0 var(--fc-red-dark);
+  }
+  #toolbar button:active { transform: translateY(2px); box-shadow: none; }
+  #btn-tas.tas-on {
+    background: #2e7d32;
+    box-shadow: 0 2px 0 #1b4d1e;
+  }
+  #btn-reset.held {
+    transform: translateY(2px);
+    box-shadow: none;
+    background: var(--fc-red-dark);
+  }
+  /* famicom-style power switch: shows a lamp */
+  #btn-power::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    background: #441111;
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.6);
+  }
+  #btn-power.power-on::before {
+    background: #ff4b3e;
+    box-shadow: 0 0 6px #ff4b3e;
+  }
+  .ext-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    background: var(--fc-red);
+    color: var(--fc-cream);
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: bold;
+    box-shadow: 0 2px 0 var(--fc-red-dark);
+  }
+  .ext-link:active { transform: translateY(2px); box-shadow: none; }
+  #lang-select {
+    background: var(--fc-red);
+    color: var(--fc-cream);
+    border: none;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  #status {
+    font-size: 12px;
+    color: var(--fc-red-dark);
+    font-weight: bold;
+    flex: 1 1 120px;
+    min-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* cartridge connector (60-pin) fault panel */
+  #cartbus {
+    display: none;
+    background: #211d18;
+    border-top: 4px solid var(--fc-red);
+    padding: 4px 8px 2px;
+    overflow-x: auto;
+    flex-shrink: 0;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  body.bus-on #cartbus { display: flex; }
+  #bus-left { flex-shrink: 0; padding-left: 14px; }
+  .bus-row { display: flex; align-items: center; margin: 1px 0; }
+  .pins { display: flex; gap: 2px; }
+  /* gold contact fingers of the card-edge connector */
+  .pin {
+    width: 17px;
+    height: 20px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(90deg, #8a6a24 0%, #E5C877 30%, #FFF0B8 50%, #D8B052 70%, #8a6a24 100%);
+    color: #4a3510;
+    font-size: 9px;
+    font-weight: bold;
+    font-family: ui-monospace, Menlo, monospace;
+    cursor: pointer;
+    text-align: center;
+  }
+  /* back row: tips point up / front row: tips point down */
+  #bus-back .pin { border-radius: 7px 7px 1px 1px; }
+  #bus-front .pin { border-radius: 1px 1px 7px 7px; }
+  .pin.off {
+    background: #151312;
+    color: #E05555;
+    box-shadow: inset 0 0 0 1px #E05555;
+  }
+  /* function label rows (above back / below front), vertical text */
+  .pins.func { align-items: flex-start; }
+  .func-label {
+    width: 17px;
+    height: 40px;
+    flex-shrink: 0;
+    writing-mode: vertical-rl;
+    font-size: 8px;
+    line-height: 1;
+    color: #b7a374;
+    font-family: ui-monospace, Menlo, monospace;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  /* blue connector housing bar with mounting ears */
+  #bus-housing {
+    position: relative;
+    width: 568px;   /* 30 * (17px + 2px gap) - 2 */
+    height: 12px;
+    background: linear-gradient(#3b63c9 0%, #24418f 60%, #1a3170 100%);
+    border-radius: 3px;
+    border: 1px solid #14265c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #bus-housing::before, #bus-housing::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    width: 12px;
+    height: 10px;
+    background: radial-gradient(circle 4px at 50% 50%, #0a1330 4px, #24418f 5px);
+    border: 1px solid #14265c;
+  }
+  #bus-housing::before { left: -13px; border-radius: 6px 0 0 6px; }
+  #bus-housing::after { right: -13px; border-radius: 0 6px 6px 0; }
+  #bus-hint { font-size: 10px; color: #85755a; margin-top: 2px; }
+  .pin.unstable {
+    background: #6e5418;
+    color: #FFD37A;
+    box-shadow: inset 0 0 0 1px #E0A030;
+    animation: pinblink 0.4s steps(2) infinite;
+  }
+  @keyframes pinblink { 50% { opacity: 0.4; } }
+  /* cartridge front view: lives on the right side of the bus panel */
+  #cart-view {
+    width: 300px;
+    flex-shrink: 0;
+    text-align: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    align-items: flex-start;
+  }
+  #cart-view h3 { width: 100%; }
+  #cart-view h3 {
+    color: #ddd;
+    font-size: 12px;
+    margin: 0 0 8px;
+    text-align: left;
+  }
+  #cart-stage {
+    position: relative;
+    width: 210px;
+    height: 130px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  #cart-inner {
+    position: absolute;
+    left: 0; bottom: 0;
+    width: 280px;
+    height: 175px;
+    transform: scale(0.75);
+    transform-origin: 0 100%;
+  }
+  #cart-body {
+    position: absolute;
+    left: 50%;
+    bottom: 28px;
+    width: 190px;
+    height: 150px;
+    margin-left: -95px;
+    transform-origin: 50% 100%;
+    transition: transform 0.15s;
+    touch-action: none;
+  }
+  #cart-body.dragging { transition: none; cursor: grabbing; }
+  #cart-svg { display: block; pointer-events: none; }
+  #cart-label {
+    position: absolute;
+    left: 26px; right: 26px; top: 50px; height: 20px;
+    color: var(--fc-red-dark);
+    font-size: 10px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  #cart-edge {
+    position: absolute;
+    left: 14px; right: 14px; bottom: -14px; height: 14px;
+    background: repeating-linear-gradient(90deg, #E5C877 0 4px, #211d18 4px 6px);
+    border-radius: 0 0 2px 2px;
+  }
+  #cart-slot {
+    position: absolute;
+    left: 8px; right: 8px; bottom: 10px; height: 18px;
+    background: #0a0a0a;
+    border: 2px solid #333;
+    border-radius: 3px;
+  }
+  #cart-tilt {
+    width: 100%;
+    margin-top: 2px;
+    accent-color: var(--fc-red);
+    cursor: pointer;
+  }
+  #clock-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 568px;
+    margin-top: 4px;
+  }
+  #clock-row span {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    color: #9fdf9f;
+    white-space: nowrap;
+  }
+  #clock-label { min-width: 120px; text-align: left; }
+  #clock-slider {
+    flex: 1 1 0;
+    min-width: 0;
+    accent-color: #4aa84a;
+    cursor: pointer;
+  }
+  #clock-input {
+    width: 84px;
+    background: #0d0d0d;
+    color: #9fdf9f;
+    border: 1px solid #444;
+    border-radius: 3px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    padding: 2px 4px;
+    text-align: right;
+  }
+  #tp-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 3px;
+  }
+  #tp-row > span {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    color: #b7a374;
+  }
+  .tp {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: #16240f;
+    border: 1px solid #3a4a20;
+    border-radius: 10px;
+    color: #9fdf6f;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    cursor: crosshair;
+  }
+  .tp::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: linear-gradient(#E5C877, #B8923C);
+  }
+  .tp:hover { background: #22381a; color: #d3ff9f; }
+  #cart-controls {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    align-items: center;
+    margin-top: 2px;
+    flex-wrap: wrap;
+  }
+  #cart-controls button {
+    background: var(--fc-red);
+    color: var(--fc-cream);
+    border: none;
+    border-radius: 5px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 2px 0 var(--fc-red-dark);
+  }
+  #cart-controls button:active { transform: translateY(2px); box-shadow: none; }
+  #cart-angle {
+    color: #ddd;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 13px;
+    min-width: 44px;
+  }
+  #cart-note { font-size: 9px; color: #85755a; margin-top: 2px; text-align: left; width: 100%; }
+  .blow-puff {
+    position: absolute;
+    bottom: 30px;
+    font-size: 26px;
+    pointer-events: none;
+    animation: puff 0.9s ease-out forwards;
+  }
+  @keyframes puff {
+    0%   { opacity: 0; transform: translate(0, 10px) scale(0.6); }
+    30%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-18px, -46px) scale(1.5); }
+  }
+  #cart-label.shake { animation: cartshake 0.5s; }
+  @keyframes cartshake {
+    0%, 100% { transform: translate(0, 0); }
+    25% { transform: translate(-2px, -2px) rotate(-1deg); }
+    50% { transform: translate(2px, 1px) rotate(1deg); }
+    75% { transform: translate(-1px, 2px); }
+  }
+  /* oscilloscope probe popup (hover a pin) */
+  #probe-scope {
+    display: none;
+    position: fixed;
+    z-index: 20;
+    background: #101408;
+    border: 2px solid #3a4a20;
+    border-radius: 6px;
+    padding: 6px;
+    pointer-events: none;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+  }
+  #probe-scope.show { display: block; }
+  #probe-label {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    color: #9fdf6f;
+    margin-bottom: 4px;
+  }
+  #probe-canvas { display: block; background: #0a0f05; }
+  /* settings dialog */
+  #settings-panel {
+    display: none;
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(420px, 92vw);
+    background: #1b1b1b;
+    border: 3px solid var(--fc-red);
+    border-radius: 8px;
+    padding: 16px;
+    z-index: 11;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+  }
+  #settings-panel.show { display: block; }
+  #settings-panel h3 { color: #ddd; font-size: 14px; margin-bottom: 12px; }
+  .set-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .set-row > span:first-child {
+    font-size: 12px;
+    color: #9fdf9f;
+    white-space: nowrap;
+  }
+  .set-row input[type=range] {
+    flex: 1 1 0;
+    min-width: 0;
+    accent-color: #4aa84a;
+    cursor: pointer;
+  }
+  .set-row .set-val {
+    width: 44px;
+    text-align: right;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    color: #ddd;
+  }
+  #settings-note {
+    font-size: 11px;
+    color: #85755a;
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+  #settings-close {
+    background: #444;
+    color: #eee;
+    border: none;
+    border-radius: 5px;
+    padding: 6px 16px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  /* cartridge swap dialog */
+  #swap-panel {
+    display: none;
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(480px, 92vw);
+    background: #1b1b1b;
+    border: 3px solid var(--fc-red);
+    border-radius: 8px;
+    padding: 16px;
+    z-index: 10;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+  }
+  #swap-panel.show { display: block; }
+  #swap-panel h3 { color: #ddd; font-size: 14px; margin-bottom: 8px; }
+  #swap-current {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    color: #9fdf9f;
+    margin-bottom: 12px;
+    word-break: break-all;
+  }
+  .swap-actions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+  .swap-btn {
+    background: var(--fc-red);
+    color: var(--fc-cream);
+    padding: 10px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: bold;
+    text-align: center;
+    box-shadow: 0 2px 0 var(--fc-red-dark);
+  }
+  .swap-btn:active { transform: translateY(2px); box-shadow: none; }
+  .swap-btn input[type=file] { display: none; }
+  #swap-url-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  #swap-url {
+    flex: 1 1 0;
+    min-width: 0;
+    background: #0d0d0d;
+    color: #9fdf9f;
+    border: 1px solid #444;
+    border-radius: 4px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+  #swap-url-btn {
+    background: var(--fc-red);
+    color: var(--fc-cream);
+    border: none;
+    border-radius: 5px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 2px 0 var(--fc-red-dark);
+    white-space: nowrap;
+  }
+  #swap-url-btn:active { transform: translateY(2px); box-shadow: none; }
+  #swap-note {
+    font-size: 11px;
+    color: #85755a;
+    line-height: 1.5;
+    margin-bottom: 12px;
+    white-space: pre-wrap;
+  }
+  #swap-close {
+    background: #444;
+    color: #eee;
+    border: none;
+    border-radius: 5px;
+    padding: 6px 16px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  /* dump check result panel */
+  #check-panel {
+    display: none;
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    max-width: min(560px, 92vw);
+    max-height: 80vh;
+    overflow: auto;
+    background: #1b1b1b;
+    border: 3px solid var(--fc-red);
+    border-radius: 8px;
+    padding: 16px;
+    z-index: 10;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+  }
+  #check-panel.show { display: block; }
+  #check-progress { display: none; margin-bottom: 12px; }
+  #check-progress.show { display: block; }
+  #check-progress-label {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    color: #ddd;
+    margin-bottom: 4px;
+  }
+  #check-bar {
+    height: 16px;
+    background: #0d0d0d;
+    border: 1px solid #444;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  #check-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: repeating-linear-gradient(90deg, #6fdc6f 0 8px, #4aa84a 8px 16px);
+    transition: width 0.06s linear;
+  }
+  #check-text {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #9fdf9f;
+    white-space: pre-wrap;
+    margin-bottom: 12px;
+  }
+  #check-text .ok { color: #6fdc6f; font-weight: bold; }
+  #check-text .ng { color: #ff6666; font-weight: bold; }
+  #check-close {
+    background: var(--fc-red);
+    color: var(--fc-cream);
+    border: none;
+    border-radius: 5px;
+    padding: 6px 16px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  #screen-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    background: #000;
+  }
+  #debug {
+    display: none;
+    width: min(370px, 60vw);
+    height: 100%;
+    flex-shrink: 0;
+    overflow: auto;
+    background: #161616;
+    color: #9fdf9f;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    line-height: 1.35;
+    padding: 8px;
+    white-space: pre;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  #dbg-disasm { margin-top: 4px; color: #8fbf8f; }
+  #dbg-disasm .cur { color: #FFEA8C; }
+  #dbg-waves { white-space: normal; }
+  .ram-b {
+    margin-left: 5px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: background 0.9s ease-out, color 0.9s ease-out, text-shadow 0.9s ease-out;
+  }
+  .ram-b:hover { background: #333; color: #fff; }
+  .ram-b.hot {
+    background: #7a5c10;
+    color: #FFEA8C;
+    text-shadow: 0 0 6px #FFC93C;
+    transition: none;
+  }
+  .ram-b.busy { color: #6a6a6a; }   /* constantly changing (timers/RNG) */
+  .ram-edit {
+    width: 16px;
+    background: #000;
+    color: #FFD37A;
+    border: 1px solid #888;
+    font: inherit;
+    text-transform: uppercase;
+    padding: 0;
+  }
+  .wave-row { display: flex; align-items: center; gap: 4px; margin: 1px 0; }
+  .wave-row span {
+    width: 32px;
+    color: #ddd;
+    font-size: 10px;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  .wave-row canvas { background: #000; border: 1px solid #333; }
+  #dbg-mixer { white-space: normal; }
+  .mix-row { display: flex; align-items: center; gap: 5px; margin: 2px 0; }
+  .mix-row > span {
+    width: 30px;
+    flex-shrink: 0;
+    font-size: 10px;
+    color: #ddd;
+    cursor: pointer;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  .mix-row > span.muted { color: #555; text-decoration: line-through; }
+  .mix-row input[type=range] {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 12px;
+    cursor: pointer;
+  }
+  .mix-row input.vol { accent-color: #4aa84a; }
+  .mix-row input.pan { accent-color: #5a8fd0; }
+  .mix-row .val {
+    width: 34px;
+    flex-shrink: 0;
+    font-size: 9px;
+    color: #85755a;
+    font-family: ui-monospace, Menlo, monospace;
+    text-align: right;
+  }
+  .mix-row.exp-row { display: none; }
+  body.has-expansion .mix-row.exp-row { display: flex; }
+  .wave-row.exp-row { display: none; }
+  body.has-expansion .wave-row.exp-row { display: flex; }
+  .wave-row span.chan-toggle { cursor: pointer; }
+  .wave-row span.chan-toggle:hover { color: #fff; }
+  .wave-row span.muted { color: #555; text-decoration: line-through; }
+  #debug h3 {
+    color: #ddd;
+    font-size: 12px;
+    margin: 6px 0 2px;
+    font-family: system-ui, sans-serif;
+  }
+  body.debug-on #debug { display: block; }
+  #debug-left {
+    display: none;
+    width: min(276px, 50vw);
+    height: 100%;
+    flex-shrink: 0;
+    overflow: auto;
+    background: #161616;
+    padding: 8px;
+    align-self: stretch;
+  }
+  #debug-left h3 {
+    color: #ddd;
+    font-size: 12px;
+    margin: 0 0 4px;
+    font-family: system-ui, sans-serif;
+  }
+  #chr-canvas {
+    image-rendering: pixelated;
+    width: 100%;
+    aspect-ratio: 1 / 2;
+    height: auto;
+    background: #000;
+    cursor: pointer;
+  }
+  body.debug-on #debug-left { display: block; }
+  canvas#screen {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    flex: 1 1 0;
+    min-width: 0;
+    height: 100%;
+    object-fit: contain;
+  }
+  /* 3D モード: 中央ステージを Three.js のキャンバスに差し替える */
+  #room-canvas {
+    display: none;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+  }
+  body.room-on #room-canvas { display: block; }
+  #screen-wrap { position: relative; }
+  /* 3D パラメータ HUD */
+  #room-hud {
+    display: none;
+    position: absolute;
+    z-index: 6;
+    width: 208px;
+    background: rgba(16, 20, 8, 0.78);
+    border: 1px solid #3a4a20;
+    border-radius: 6px;
+    padding: 6px 8px 7px;
+    font-family: ui-monospace, Menlo, monospace;
+    color: #9fdf6f;
+    backdrop-filter: blur(3px);
+  }
+  body.room-on #room-hud.on { display: block; }
+  #hud-head { display: flex; align-items: center; justify-content: space-between; }
+  #hud-title { font-size: 11px; font-weight: bold; color: #d3ff9f; }
+  #hud-toggle {
+    background: none;
+    border: 1px solid #3a4a20;
+    border-radius: 3px;
+    color: #9fdf6f;
+    font: inherit;
+    font-size: 11px;
+    line-height: 1;
+    padding: 1px 6px;
+    cursor: pointer;
+  }
+  #room-hud.collapsed #hud-body { display: none; }
+  .hud-row { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
+  .hud-row > span:first-child { width: 62px; flex-shrink: 0; font-size: 9px; letter-spacing: 0.04em; }
+  .hud-sec {
+    margin: 7px 0 1px;
+    font-size: 8px;
+    letter-spacing: 0.14em;
+    color: #6f8a4a;
+    border-bottom: 1px solid #2b3a18;
+    padding-bottom: 2px;
+  }
+  .hud-row-btns { gap: 8px; margin-top: 7px; }
+  .hud-row-btns .hud-btn { width: auto; flex: 1 1 0; margin-top: 0; }
+  .hud-row input[type=range] {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 12px;
+    accent-color: #6fdc6f;
+    cursor: pointer;
+  }
+  .hud-val { width: 32px; flex-shrink: 0; font-size: 9px; text-align: right; color: #d3ff9f; }
+  .hud-check {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 6px;
+    font-size: 9px;
+    cursor: pointer;
+  }
+  .hud-check input { accent-color: #6fdc6f; margin: 0; }
+  .hud-btn {
+    width: 100%;
+    margin-top: 6px;
+    background: rgba(143, 35, 35, 0.55);
+    border: 1px solid #6b2a2a;
+    border-radius: 4px;
+    color: #ffd9d9;
+    font: inherit;
+    font-size: 10px;
+    padding: 4px 6px;
+    cursor: pointer;
+  }
+  .hud-btn-row { display: flex; gap: 4px; }
+  .hud-btn-row .hud-btn-s { width: auto; flex: 1 1 0; font-size: 12px; padding: 3px 0; }
+  .hud-btn.on {
+    background: rgba(60, 90, 30, 0.5);
+    border-color: #3a4a20;
+    color: #d3ff9f;
+  }
+  /* 3D モードの操作オーバーレイ (左下) */
+  #room-toolbar {
+    display: none;
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    z-index: 5;
+    flex-direction: column;
+    gap: 5px;
+    font-family: ui-monospace, Menlo, monospace;
+  }
+  body.room-on #room-toolbar { display: flex; }
+  /* 3D 中はエミュレータ時代の上下のパネルを隠す (左右のデバッグ表示は残す) */
+  body.room-on #toolbar,
+  body.room-on #cartbus { display: none !important; }
+  .rt-row { display: flex; gap: 5px; }
+  .rt-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(18, 16, 14, 0.72);
+    border: 1px solid rgba(180, 165, 130, 0.35);
+    border-radius: 5px;
+    color: #ded6c3;
+    font: inherit;
+    font-size: 10px;
+    padding: 5px 9px;
+    cursor: pointer;
+    backdrop-filter: blur(3px);
+    white-space: nowrap;
+  }
+  .rt-btn:hover { background: rgba(40, 36, 30, 0.85); border-color: rgba(210, 195, 160, 0.6); }
+  .rt-btn:active { transform: translateY(1px); }
+  .rt-btn.on { background: rgba(60, 90, 30, 0.65); border-color: #6f9c3a; color: #d3ff9f; }
+  .rt-btn.held { background: rgba(143, 35, 35, 0.75); border-color: #c05555; color: #ffd9d9; }
+  .rt-icon { font-size: 13px; padding: 4px 8px; }
+  .rt-lamp {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #441111;
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.6);
+  }
+  #rt-power.on .rt-lamp { background: #ff4b3e; box-shadow: 0 0 6px #ff4b3e; }
+  /* カセットにホバーしたときの傾きゲージ */
+  #cart-hud {
+    display: none;
+    position: absolute;
+    z-index: 6;
+    width: 172px;
+    background: rgba(16, 20, 8, 0.86);
+    border: 1px solid #3a4a20;
+    border-radius: 6px;
+    padding: 7px 8px 8px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    color: #9fdf6f;
+    pointer-events: none;
+    backdrop-filter: blur(3px);
+  }
+  #cart-hud.on { display: block; }
+  /* 飲酒ダイアログ */
+  #drink-modal {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 12;
+    background: rgba(0, 0, 0, 0.45);
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+  }
+  #drink-modal.on { display: flex; }
+  .dm-box {
+    width: min(320px, 84%);
+    background: #1b1b1b;
+    border: 3px solid var(--fc-red);
+    border-radius: 8px;
+    padding: 18px 18px 16px;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.7);
+  }
+  .dm-title { font-size: 15px; font-weight: bold; color: #f0e8d8; margin-bottom: 6px; }
+  .dm-note { font-size: 11px; color: #9a917f; margin-bottom: 16px; }
+  .dm-btns { display: flex; gap: 10px; justify-content: center; }
+  .dm-btn {
+    flex: 1 1 0;
+    background: #3a3a3a;
+    border: 1px solid #555;
+    border-radius: 5px;
+    color: #eee;
+    font: inherit;
+    font-size: 13px;
+    font-weight: bold;
+    padding: 8px 0;
+    cursor: pointer;
+  }
+  .dm-btn:hover { background: #4a4a4a; }
+  .dm-yes { background: var(--fc-red); border-color: var(--fc-red-dark); color: var(--fc-cream); }
+  .dm-yes:hover { background: #a52d2d; }
+  /* ファミコンにホバーしたときの HUD */
+  #fc-hud {
+    display: none;
+    position: absolute;
+    z-index: 6;
+    width: 178px;
+    background: rgba(16, 20, 8, 0.86);
+    border: 1px solid #3a4a20;
+    border-radius: 6px;
+    padding: 7px 8px 8px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 10px;
+    color: #9fdf6f;
+    backdrop-filter: blur(3px);
+  }
+  #fc-hud.on { display: block; }
+  #fc-rom {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #d3ff9f;
+  }
+  .fc-btns { display: flex; gap: 5px; margin: 6px 0 5px; }
+  .fc-btns .rt-btn { flex: 1 1 0; justify-content: center; font-size: 9px; padding: 5px 4px; }
+  #fc-hint { color: #6f8a4a; font-size: 9px; line-height: 1.4; }
+  body.rom-drag #fc-hud { display: block; border-color: #9fdf6f; box-shadow: 0 0 0 2px rgba(159,223,111,0.35); }
+  .ch-row { display: flex; justify-content: space-between; align-items: baseline; }
+  #ch-deg { font-size: 13px; font-weight: bold; color: #d3ff9f; }
+  #ch-gauge {
+    position: relative;
+    height: 10px;
+    margin: 6px 0 5px;
+    border-radius: 5px;
+    background: linear-gradient(90deg,
+      #b03030 0%, #c08a30 22%, #4aa84a 46%, #4aa84a 54%, #c08a30 78%, #b03030 100%);
+  }
+  #ch-center {
+    position: absolute;
+    left: 50%; top: -2px;
+    width: 1px; height: 14px;
+    background: rgba(255,255,255,0.5);
+  }
+  #ch-needle {
+    position: absolute;
+    top: -3px;
+    width: 3px; height: 16px;
+    margin-left: -1.5px;
+    background: #fff;
+    border-radius: 2px;
+    box-shadow: 0 0 4px rgba(0,0,0,0.8);
+    transition: left 0.05s linear;
+  }
+  #ch-ins-track {
+    height: 6px;
+    margin: 3px 0 5px;
+    border-radius: 3px;
+    background: #23301a;
+    overflow: hidden;
+  }
+  #ch-ins-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #4aa84a, #9fdf6f);
+    transition: width 0.05s linear;
+  }
+  #ch-pins {
+    display: flex;
+    gap: 1px;
+    margin: 5px 0 6px;
+    height: 12px;
+  }
+  #ch-pins i {
+    flex: 1 1 0;
+    border-radius: 1px;
+    background: linear-gradient(#E5C877, #B8923C);
+  }
+  #ch-pins i.weak { background: #6e5418; box-shadow: inset 0 0 0 1px #E0A030; }
+  #ch-pins i.off { background: #2a1010; box-shadow: inset 0 0 0 1px #E05555; }
+  #ch-hint { color: #6f8a4a; font-size: 9px; }
+  #hud-read {
+    margin-top: 6px;
+    font-size: 9px;
+    line-height: 1.5;
+    color: #85a55a;
+    white-space: pre;
+  }
+  body.room-on canvas#screen { display: none; }
+  body.room-on #btn-room { background: #2e7d32; box-shadow: 0 2px 0 #1b4d1e; }
+  /* virtual pad */
+  #pad {
+    display: none;
+    position: relative;
+    height: 210px;
+    background: var(--fc-gold);
+    border-top: 6px solid var(--fc-red);
+    flex-shrink: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  @media (pointer: coarse) {
+    #pad { display: block; }
+  }
+  /* スマホ: 上のメニューを小さくして画面 (flex:1) を大きく */
+  @media (max-width: 600px) {
+    #toolbar { gap: 4px; padding: 4px; border-bottom-width: 2px; }
+    #toolbar button, #toolbar label {
+      font-size: 10px;
+      padding: 4px 7px;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.3);
+    }
+    #toolbar select, #toolbar input[type=text] { font-size: 10px; padding: 2px 4px; }
+    #status { font-size: 10px; }
+  }
+  .pbtn {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--fc-dark);
+    border-radius: 8px;
+    color: var(--fc-cream);
+    font-size: 13px;
+    font-weight: bold;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.4);
+  }
+  .pbtn.active { background: var(--fc-red); box-shadow: none; transform: translateY(2px); }
+  #btn-a, #btn-b {
+    background: var(--fc-red);
+    color: var(--fc-cream);
+    box-shadow: 0 3px 0 var(--fc-red-dark);
+  }
+  #btn-a.active, #btn-b.active { background: var(--fc-red-dark); }
+  #btn-select, #btn-start {
+    background: var(--fc-red);
+    color: var(--fc-cream);
+    font-size: 11px;
+    box-shadow: 0 2px 0 var(--fc-red-dark);
+  }
+  /* d-pad: 3x3 grid at left */
+  #btn-up    { left: 68px;  bottom: 128px; width: 52px; height: 52px; }
+  #btn-down  { left: 68px;  bottom: 24px;  width: 52px; height: 52px; }
+  #btn-left  { left: 16px;  bottom: 76px;  width: 52px; height: 52px; }
+  #btn-right { left: 120px; bottom: 76px;  width: 52px; height: 52px; }
+  /* A/B at right */
+  #btn-b { right: 96px; bottom: 56px; width: 64px; height: 64px; border-radius: 50%; }
+  #btn-a { right: 16px; bottom: 88px; width: 64px; height: 64px; border-radius: 50%; }
+  /* select/start center */
+  #btn-select { left: 50%; transform: translateX(-110%); bottom: 16px; width: 72px; height: 32px; border-radius: 16px; }
+  #btn-start  { left: 50%; transform: translateX(10%);  bottom: 16px; width: 72px; height: 32px; border-radius: 16px; }
+</style>
+</head>
+<body class="bus-on">
+<div id="app">
+  <div id="toolbar">
+    <label><span id="lbl-open">ROMを開く</span><input type="file" id="rom-input" accept=".nes,application/octet-stream"></label>
+    <button id="btn-power" class="power-off">電源</button>
+    <button id="btn-reset">リセット</button>
+    <button id="btn-swap">カセット入替</button>
+    <button id="btn-mute">🔊</button>
+    <button id="btn-room">3D</button>
+    <button id="btn-debug">DEBUG</button>
+    <button id="btn-bus">端子</button>
+    <button id="btn-xev" hidden>XEVIOUS判定</button>
+    <button id="btn-tas" hidden>TAS</button>
+    <button id="btn-settings">⚙</button>
+    <input type="file" id="tas-input" accept=".fm2" style="display:none">
+    <span id="status">.NESファイルを選択してください</span>
+    <select id="lang-select"><option value="auto">Auto</option><option value="ja">日本語</option><option value="en">English</option><option value="zh">中文</option></select>
+    <a class="ext-link" href="https://x.com/GOROman" target="_blank" rel="noopener" title="X (@GOROman)">𝕏</a>
+    <a class="ext-link" href="https://github.com/GOROman/cluade-famicom-emu" target="_blank" rel="noopener" title="GitHub"><svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+  </div>
+  <div id="cartbus">
+    <div id="bus-left">
+      <div class="bus-row"><div id="bus-back-func" class="pins func"></div></div>
+      <div class="bus-row"><div id="bus-back" class="pins"></div></div>
+      <div class="bus-row"><div id="bus-housing"></div></div>
+      <div class="bus-row"><div id="bus-front" class="pins"></div></div>
+      <div class="bus-row"><div id="bus-front-func" class="pins func"></div></div>
+      <div id="bus-hint">クリックで接点の接触不良をトグル(金=導通 / 黒=接触不良)。ホバーでピンの解説。リセットで復旧確認</div>
+      <div id="clock-row">
+        <span id="clock-label">CLOCK 1.79 MHz</span>
+        <input type="range" id="clock-slider" min="0" max="6.2528" step="0.001" value="6.2528" title="1 Hz - 1.79 MHz (log)">
+        <input type="text" id="clock-input" value="1789773" inputmode="numeric">
+        <span class="clock-unit">Hz</span>
+      </div>
+      <div id="tp-row">
+        <span>TP</span>
+        <div class="tp" data-pin="61">/NMI</div>
+        <div class="tp" data-pin="62">APU /IRQ</div>
+        <div class="tp" data-pin="63">MAP /IRQ</div>
+      </div>
+    </div>
+    <div id="cart-view">
+      <h3 id="cart-title-h3">カートリッジ挿入状態</h3>
+      <div id="cart-stage">
+        <div id="cart-inner">
+        <div id="cart-slot"></div>
+        <div id="cart-body">
+          <svg id="cart-svg" viewBox="0 0 190 150" width="190" height="150" xmlns="http://www.w3.org/2000/svg">
+            <!-- top lip with two notches -->
+            <rect x="14" y="0" width="162" height="12" rx="3" fill="var(--fc-red)"/>
+            <rect x="30" y="0" width="26" height="5" fill="rgba(0,0,0,0.28)"/>
+            <rect x="134" y="0" width="26" height="5" fill="rgba(0,0,0,0.28)"/>
+            <!-- body -->
+            <rect x="2" y="8" width="186" height="140" rx="9" fill="var(--fc-red)" stroke="rgba(0,0,0,0.35)" stroke-width="1.5"/>
+            <!-- horizontal grooves near top and bottom -->
+            <line x1="8" y1="21" x2="182" y2="21" stroke="rgba(0,0,0,0.25)" stroke-width="1.5"/>
+            <line x1="8" y1="24" x2="182" y2="24" stroke="rgba(255,255,255,0.14)" stroke-width="1"/>
+            <line x1="8" y1="140" x2="182" y2="140" stroke="rgba(0,0,0,0.25)" stroke-width="1.5"/>
+            <!-- side grip grooves -->
+            <g stroke="rgba(0,0,0,0.25)" stroke-width="1.5">
+              <line x1="7"  y1="56" x2="7"  y2="104"/>
+              <line x1="11" y1="56" x2="11" y2="104"/>
+              <line x1="179" y1="56" x2="179" y2="104"/>
+              <line x1="183" y1="56" x2="183" y2="104"/>
+            </g>
+            <!-- label plate -->
+            <rect x="20" y="30" width="150" height="104" rx="4" fill="var(--fc-cream)" stroke="rgba(0,0,0,0.3)"/>
+            <!-- code strip -->
+            <rect x="20" y="30" width="150" height="16" fill="rgba(0,0,0,0.08)"/>
+            <line x1="20" y1="46" x2="170" y2="46" stroke="rgba(0,0,0,0.25)"/>
+            <rect x="24" y="33" width="32" height="10" fill="none" stroke="rgba(0,0,0,0.4)" stroke-width="0.8"/>
+            <text x="40" y="41" font-size="7" text-anchor="middle" fill="#444" font-family="ui-monospace, monospace">HVC</text>
+            <!-- diagonal swoosh band -->
+            <polygon points="20,72 92,72 118,100 170,54 170,66 118,112 92,84 20,84" fill="var(--fc-red)"/>
+            <!-- pinstripes following the band -->
+            <g stroke="var(--fc-red)" stroke-width="1.1" fill="none" opacity="0.75">
+              <polyline points="20,90 92,90 118,118 170,72"/>
+              <polyline points="20,95 92,95 117,122 170,77"/>
+              <polyline points="20,100 92,100 116,126 170,82"/>
+            </g>
+          </svg>
+          <div id="cart-label">CASSETTE</div>
+          <div id="cart-edge"></div>
+        </div>
+        </div>
+      </div>
+      <input type="range" id="cart-tilt" min="-6" max="6" step="0.1" value="0">
+      <div id="cart-controls">
+        <button id="cart-ccw">⟲ 左回り</button>
+        <span id="cart-angle">0.0°</span>
+        <button id="cart-cw">右回り ⟳</button>
+        <button id="cart-straight">挿し直す</button>
+        <button id="cart-blow">息(フーフー)💨</button>
+      </div>
+      <div id="cart-note">傾けると端子の接触が浮いた側から不安定になります(点滅=接触不良気味、黒=断線)。「挿し直す」で全ピン復旧。</div>
+    </div>
+  </div>
+  <div id="debug-left">
+    <h3 id="chr-title">CGROM (CHR) — pal 0 [click]</h3>
+    <canvas id="chr-canvas" width="128" height="256" title="クリックでパレット切替"></canvas>
+  </div>
+  <div id="stage">
+    <div id="screen-wrap">
+      <canvas id="screen" width="256" height="240"></canvas>
+      <div id="room-toolbar">
+        <div class="rt-row">
+          <button id="rt-power" class="rt-btn" title="Power"><i class="rt-lamp"></i><span id="lbl-rt-power">POWER</span></button>
+          <button id="rt-reset" class="rt-btn" title="Reset">⟳ <span id="lbl-rt-reset">RESET</span></button>
+        </div>
+        <div class="rt-row">
+          <button id="rt-grab" class="rt-btn" title="Grab / throw things">✋ <span id="lbl-rt-grab">GRAB</span></button>
+          <button id="rt-tidy" class="rt-btn" title="Tidy up">🧹 <span id="lbl-rt-tidy">TIDY</span></button>
+        </div>
+        <div class="rt-row">
+          <button id="rt-light" class="rt-btn" title="Room light">💡 <span id="rt-light-val">LIGHT</span></button>
+        </div>
+        <input type="range" id="room-light" min="0" max="200" step="1" value="100" hidden>
+        <div class="rt-row rt-palette">
+          <button id="rt-roach" class="rt-btn rt-icon" title="Roach">🪳</button>
+          <button id="rt-spray" class="rt-btn rt-icon" title="Bug spray">🧴</button>
+          <button id="rt-leak" class="rt-btn rt-icon" title="Leak">💧</button>
+          <button id="rt-can" class="rt-btn rt-icon" title="Soda">🥤</button>
+          <button id="rt-tarai" class="rt-btn rt-icon" title="Drop a washtub">🪣</button>
+            <button id="rt-zapper" class="rt-btn rt-icon" title="Zapper light gun">🔫</button>
+        </div>
+      </div>
+      <div id="drink-modal">
+        <div class="dm-box">
+          <div class="dm-title">飲酒を開始しますか？</div>
+          <div class="dm-note">一升瓶に手を伸ばした。</div>
+          <div class="dm-btns">
+            <button id="dm-yes" class="dm-btn dm-yes">はい</button>
+            <button id="dm-no" class="dm-btn">いいえ</button>
+          </div>
+        </div>
+      </div>
+      <div id="fc-hud">
+        <div class="ch-row"><span id="fc-title">ファミコン</span><span id="fc-rom">-</span></div>
+        <div class="fc-btns">
+          <button id="fc-power" class="rt-btn"><i class="rt-lamp"></i>POWER</button>
+          <button id="fc-reset" class="rt-btn">⟳ RESET</button>
+        </div>
+        <div id="fc-hint">.nes をここにドロップでカセット交換</div>
+      </div>
+      <div id="cart-hud">
+        <div class="ch-row"><span id="ch-title">カセットの傾き</span><span id="ch-deg">0.0°</span></div>
+        <div id="ch-gauge"><div id="ch-center"></div><div id="ch-needle"></div></div>
+        <div class="ch-row"><span id="ch-ins">差し込み 100%</span></div>
+        <div id="ch-ins-track"><div id="ch-ins-bar"></div></div>
+        <div class="ch-row"><span id="ch-contact">接点 60/60</span></div>
+        <div id="ch-pins"></div>
+        <div id="ch-hint">左右=傾ける / 上下=抜き差し</div>
+      </div>
+      <div id="room-hud">
+        <div id="hud-head"><span id="hud-title">TV</span><button id="hud-toggle">−</button></div>
+        <div id="hud-body">
+          <div class="hud-sec">PICTURE</div>
+          <div class="hud-row">
+            <span id="lbl-uhf">UHF GAIN</span>
+            <input type="range" id="uhf-gain" min="0" max="100" step="1" value="100">
+            <span class="hud-val" id="uhf-val">100%</span>
+          </div>
+          <div class="hud-row">
+            <span id="lbl-tune">TUNING</span>
+            <input type="range" id="rf-tune" min="-100" max="100" step="1" value="0">
+            <span class="hud-val" id="tune-val">0.00</span>
+          </div>
+          <div class="hud-row">
+            <span id="lbl-crt">CRT FX</span>
+            <input type="range" id="crt-amount" min="0" max="100" step="1" value="100">
+            <span class="hud-val" id="crt-val">100%</span>
+          </div>
+          <div class="hud-row hud-row-btns">
+            <label class="hud-check"><input type="checkbox" id="osd-on"><span id="lbl-osd">OSD</span></label>
+            <button id="hud-mute" class="hud-btn">🔇 <span id="lbl-mute">MUTE</span></button>
+          </div>
+          <div id="hud-read"></div>
+        </div>
+      </div>
+    </div>
+    <div id="pad">
+      <div class="pbtn" id="btn-up" data-bit="16">▲</div>
+      <div class="pbtn" id="btn-down" data-bit="32">▼</div>
+      <div class="pbtn" id="btn-left" data-bit="64">◀</div>
+      <div class="pbtn" id="btn-right" data-bit="128">▶</div>
+      <div class="pbtn" id="btn-b" data-bit="2">B</div>
+      <div class="pbtn" id="btn-a" data-bit="1">A</div>
+      <div class="pbtn" id="btn-select" data-bit="4">SELECT</div>
+      <div class="pbtn" id="btn-start" data-bit="8">START</div>
+    </div>
+  </div>
+  <div id="debug">
+      <h3 id="h-cpu">CPU レジスタ</h3>
+      <div id="dbg-cpu"></div>
+      <div id="dbg-disasm"></div>
+      <h3 id="h-waves">APU 波形</h3>
+      <div id="dbg-waves">
+        <div class="wave-row"><span>SQ1</span><canvas class="wave" width="280" height="18"></canvas></div>
+        <div class="wave-row"><span>SQ2</span><canvas class="wave" width="280" height="18"></canvas></div>
+        <div class="wave-row"><span>TRI</span><canvas class="wave" width="280" height="18"></canvas></div>
+        <div class="wave-row"><span>NOI</span><canvas class="wave" width="280" height="18"></canvas></div>
+        <div class="wave-row"><span>DMC</span><canvas class="wave" width="280" height="18"></canvas></div>
+        <div class="wave-row exp-row"><span>VP1</span><canvas class="wave" width="280" height="18"></canvas></div>
+        <div class="wave-row exp-row"><span>VP2</span><canvas class="wave" width="280" height="18"></canvas></div>
+        <div class="wave-row exp-row"><span>VSW</span><canvas class="wave" width="280" height="18"></canvas></div>
+        <div class="wave-row"><span>MIX</span><canvas class="wave" width="280" height="18"></canvas></div>
+      </div>
+      <h3 id="h-mixer">APU ミキサー</h3>
+      <div id="dbg-mixer"></div>
+      <h3 id="h-apuregs">APU $4000-$4017</h3>
+      <div id="dbg-apu"></div>
+      <h3 id="h-wram">WRAM $0000-$07FF (ダブルクリックで編集)</h3>
+      <div id="dbg-wram"></div>
+  </div>
+</div>
+<button class="edge-hint" id="hint-up" title="上のパネル">▲</button>
+<button class="edge-hint" id="hint-down" title="下のパネル">▼</button>
+<button class="edge-hint" id="hint-left" title="左のパネル">◀</button>
+<button class="edge-hint" id="hint-right" title="右のパネル">▶</button>
+<div id="probe-scope">
+  <div id="probe-label"></div>
+  <canvas id="probe-canvas" width="256" height="80"></canvas>
+</div>
+<div id="settings-panel">
+  <h3 id="settings-title">設定</h3>
+  <div class="set-row">
+    <span id="lbl-master">マスターボリューム</span>
+    <input type="range" id="master-vol" min="0" max="150" step="1" value="100">
+    <span class="set-val" id="master-val">100%</span>
+  </div>
+  <div id="settings-note">スライダーはダブルクリックで既定値に戻ります。チャンネル個別の音量/定位は DEBUG パネルのミキサーで調整できます。</div>
+  <button id="settings-close">閉じる</button>
+</div>
+<div id="swap-panel">
+  <h3 id="swap-title">カセット入替</h3>
+  <div id="swap-current">PRG: - / CHR: -</div>
+  <div class="swap-actions">
+    <label class="swap-btn"><span id="lbl-swap-whole">まるごと入替</span><input type="file" id="swap-input" accept=".nes,application/octet-stream"></label>
+    <label class="swap-btn"><span id="lbl-swap-prg">PRGROMだけ入替</span><input type="file" id="swap-prg-input" accept=".nes,application/octet-stream"></label>
+    <label class="swap-btn"><span id="lbl-swap-chr">CHRROMだけ入替</span><input type="file" id="swap-chr-input" accept=".nes,application/octet-stream"></label>
+  </div>
+  <div id="swap-url-row">
+    <input type="text" id="swap-url" placeholder="https://.../game.nes" spellcheck="false">
+    <button id="swap-url-btn">URLから読込</button>
+  </div>
+  <div id="swap-note">電源を入れたまま差し替えます(リセットは掛かりません → リセットで起動、RAM保持)。
+PRGとCHRを別のカセットから組み合わせた「ニコイチカセット」も作れます。マッパー/ミラーリングはPRG側のヘッダに従います。</div>
+  <button id="swap-close">閉じる</button>
+</div>
+<div id="check-panel">
+  <pre id="check-text"></pre>
+  <div id="check-progress">
+    <div id="check-progress-label"></div>
+    <div id="check-bar"><div id="check-bar-fill"></div></div>
+  </div>
+  <button id="check-close">閉じる</button>
+</div>
+<script>window.NES_VER='1786075536';</script>
+<script src="i18n.js?v=1786075536"></script>
+<script src="smb-ram.js?v=1786075536"></script>
+<script src="layout.js?v=1786075536"></script>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/jsm/" } }
+</script>
+<script type="module" src="room.js?v=1786075536"></script>
+<script src="nes.js?v=1786075536"></script>
+<script src="main.js?v=1786075536"></script>
+</body>
+</html>
