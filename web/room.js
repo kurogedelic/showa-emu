@@ -1691,20 +1691,41 @@ function aimZapper(origin, dir) {
 
 // 光線。右ボタンを押している間ずっと出る。当たったものは押されて動く
 const beam = {
-  mesh: null, glow: null, flash: null,
+  mesh: null, halo: null, glow: null, flash: null, smoke: [],
   firing: false, origin: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, -1),
-  hit: null, sndAt: 0,
+  hit: null, sndAt: 0, smokeAt: 0,
 };
 
 function initBeam() {
-  const geo = new THREE.CylinderGeometry(0.007, 0.002, 1, 10, 1, true);
-  geo.translate(0, 0.5, 0);              // 原点を根本に
-  beam.mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-    color: 0xfff0b0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+  // 芯 (白く細い) と ハロー (太くて淡い) の二重
+  const core = new THREE.CylinderGeometry(0.010, 0.004, 1, 12, 1, true);
+  core.translate(0, 0.5, 0);
+  beam.mesh = new THREE.Mesh(core, new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
     depthWrite: false, side: THREE.DoubleSide,
   }));
   beam.mesh.visible = false;
   scene.add(beam.mesh);
+
+  const halo = new THREE.CylinderGeometry(0.030, 0.012, 1, 12, 1, true);
+  halo.translate(0, 0.5, 0);
+  beam.halo = new THREE.Mesh(halo, new THREE.MeshBasicMaterial({
+    color: 0xffb14a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+    depthWrite: false, side: THREE.DoubleSide,
+  }));
+  beam.halo.visible = false;
+  scene.add(beam.halo);
+
+  // 着弾点から立ちのぼる煙
+  const tex = fogTexture();
+  for (let i = 0; i < 44; i++) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, color: 0x6a6258, transparent: true, opacity: 0, depthWrite: false,
+    }));
+    m.visible = false;
+    scene.add(m);
+    beam.smoke.push({ mesh: m, life: 0, max: 1, vel: new THREE.Vector3(), spin: 0 });
+  }
 
   beam.glow = new THREE.Sprite(new THREE.SpriteMaterial({
     color: 0xfff4c0, transparent: true, opacity: 0, depthWrite: false,
@@ -1729,12 +1750,48 @@ function itemOf(obj) {
 function setBeamFiring(on) {
   beam.firing = on;
   beam.mesh.visible = on;
+  beam.halo.visible = on;
   beam.glow.visible = on;
   if (!on) {
     beam.mesh.material.opacity = 0;
+    beam.halo.material.opacity = 0;
     beam.glow.material.opacity = 0;
     beam.flash.intensity = 0;
     beam.hit = null;
+  }
+}
+
+// 着弾点から煙を出す
+function puffSmoke(at, dir) {
+  const p = beam.smoke.find((x) => x.life <= 0);
+  if (!p) return;
+  p.max = 1.4 + Math.random() * 1.2;
+  p.life = p.max;
+  p.mesh.visible = true;
+  p.mesh.position.copy(at).addScaledVector(dir, -0.02);
+  p.mesh.scale.setScalar(0.03);
+  p.mesh.material.opacity = 0;
+  p.mesh.material.rotation = Math.random() * Math.PI;
+  p.spin = (Math.random() - 0.5) * 0.9;
+  // 当たった面から少し跳ね返って、あとは上へ
+  p.vel.copy(dir).multiplyScalar(-0.35 - Math.random() * 0.3);
+  p.vel.x += (Math.random() - 0.5) * 0.25;
+  p.vel.y += 0.25 + Math.random() * 0.3;
+  p.vel.z += (Math.random() - 0.5) * 0.25;
+}
+
+function updateSmoke(dt) {
+  for (const p of beam.smoke) {
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    const age = 1 - p.life / p.max;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.vel.multiplyScalar(1 - dt * 1.1);
+    p.vel.y += 0.22 * dt;                       // 熱でゆっくり上がる
+    p.mesh.scale.setScalar(0.03 + age * 0.30);
+    p.mesh.material.rotation += p.spin * dt;
+    p.mesh.material.opacity = Math.min(1, age * 5) * (1 - age) * 0.55;
+    if (p.life <= 0) { p.mesh.visible = false; p.mesh.material.opacity = 0; }
   }
 }
 
@@ -1758,24 +1815,37 @@ function updateBeam(dt, now) {
   const dist = first ? first.distance : 8;
   beam.hit = first ? first.point.clone() : null;
 
-  // 見た目 (少し脈打たせる)
-  const puls = 0.82 + 0.18 * Math.sin(now / 26);
+  // 見た目 (脈打たせる)
+  const puls = 0.85 + 0.15 * Math.sin(now / 22);
+  _beamQ.setFromUnitVectors(_aimUp, dir);
   beam.mesh.position.copy(origin);
-  beam.mesh.quaternion.copy(_beamQ.setFromUnitVectors(_aimUp, dir));
+  beam.mesh.quaternion.copy(_beamQ);
   beam.mesh.scale.set(puls, dist, puls);
-  beam.mesh.material.opacity = 0.75 * puls;
+  beam.mesh.material.opacity = puls;
+  beam.halo.position.copy(origin);
+  beam.halo.quaternion.copy(_beamQ);
+  beam.halo.scale.set(puls * 1.1, dist, puls * 1.1);
+  beam.halo.material.opacity = 0.30 * puls;
   beam.glow.position.copy(origin).addScaledVector(dir, dist);
-  beam.glow.scale.setScalar(0.05 + 0.03 * puls);
-  beam.glow.material.opacity = 0.85 * puls;
+  beam.glow.scale.setScalar(0.10 + 0.05 * puls);
+  beam.glow.material.opacity = puls;
   beam.flash.position.copy(origin).addScaledVector(dir, 0.06);
-  beam.flash.intensity = 2.6 * puls;
+  beam.flash.intensity = 6.5 * puls;
+
+  // 当たっているところから煙
+  if (first && now - beam.smokeAt > 45) {
+    beam.smokeAt = now;
+    puffSmoke(first.point, dir);
+  }
 
   // 当たり判定: 剛体なら押される、壁は焦げるだけ、ゴキブリは焼ける
   if (first) {
     const it = itemOf(first.object);
     if (it && it.body.type === CANNON.Body.DYNAMIC) {
-      const imp = new CANNON.Vec3(dir.x, dir.y + 0.12, dir.z);
-      imp.scale(2.6 * dt * Math.max(0.4, it.body.mass), imp);
+      // 真下に押し付けるだけにならないよう、下向き成分を抑えて少し持ち上げる
+      const imp = new CANNON.Vec3(dir.x, Math.max(dir.y, -0.15) + 0.32, dir.z);
+      imp.normalize();
+      imp.scale(9.0 * dt * Math.max(0.5, it.body.mass), imp);
       const rel = new CANNON.Vec3(
         first.point.x - it.body.position.x,
         first.point.y - it.body.position.y,
@@ -2423,6 +2493,7 @@ function loop() {
   for (const r of roaches) r.update(dt);
   updateSpray(dt);
   updateBeam(dt, now);
+  updateSmoke(dt);
   updateDrunk(dt, now);
   if (leak) leak.update(dt);
   if (can) {
