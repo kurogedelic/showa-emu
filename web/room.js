@@ -1733,7 +1733,6 @@ function bindPointer(canvas) {
       mode = 'plug';
       grabbedCable = hit.cable;
       cables.grab(grabbedCable);
-      sfx.unplug();
       hitPt.copy(hit.point);
       plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(_v).clone().negate(), hitPt);
       controls.enabled = false;
@@ -1953,8 +1952,15 @@ function init() {
       outlet.add(slot);
     }
   }
-  outlet.position.set(-0.85, 0.20, -ROOM_D / 2 + 0.008);
-  scene.add(outlet);
+  // 壁に固定する (壁の子にするので、壁が倒れれば一緒に倒れる)
+  const backWall = (room.userData.walls || [])[0];
+  if (backWall) {
+    outlet.position.set(-0.85, 0.20 - ROOM_H / 2, 0.06 / 2 + 0.004);
+    backWall.add(outlet);
+  } else {
+    outlet.position.set(-0.85, 0.20, -ROOM_D / 2 + 0.008);
+    scene.add(outlet);
+  }
 
   // RF コンバータ (ファミコンとテレビの間の白い箱)
   const conv = buildConverter();
@@ -1975,6 +1981,7 @@ function init() {
   const sockConvOut = cables.addSocket('conv-out', conv, V3(0.028, 0.012, -CONV_D / 2 - 0.002), BACK, 0x9a9a9c);
 
   // RF は 本体 -> コンバータ -> テレビ の 2 本
+  cables.onPull(() => sfx.unplug());
   cables.addCable({ name: 'rf-in', from: sockFcRf, to: sockConvIn, color: 0x2b2b2e, radius: 0.0032, slack: 1.4 });
   cables.addCable({ name: 'rf-out', from: sockConvOut, to: sockTvAnt, color: 0x2b2b2e, radius: 0.0032, slack: 1.35 });
   cables.addCable({ name: 'tv-power', from: sockTvAc, to: sockOut1, color: 0x17171a, radius: 0.0036, slack: 1.3 });

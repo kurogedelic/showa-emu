@@ -18,8 +18,9 @@ bundled in this repo. Use **Open ROM** in the toolbar to load your own `.nes` fi
   [famicom-rf-hackrf-decoder](https://github.com/GOROman/famicom-rf-hackrf-decoder) — CH1, V-SYNC /
   H-SYNC lock, FPS, carrier frequencies, latency. The OSD goes through the CRT effects too.
 - **Cables you can unplug.** RF (console → RF switch → TV), the TV's mains lead and the Famicom's AC
-  adapter, simulated as Verlet ropes. Pull the RF plug and you get snow; pull the mains and the tube
-  goes dark; pull the adapter and the console powers off.
+  adapter, simulated as Verlet ropes with a real length — pull a plug (or drag the set across the
+  room) and it comes out of the socket when the cable goes taut. Pull the RF and you get snow; pull
+  the mains and the tube goes dark; pull the adapter and the console powers off.
 - **A real cartridge.** 109.5 × 70 × 17 mm shell, 90 × 46.1 mm board, 60 pads on a 2.54 mm pitch
   (dimensions from the [NESdev Wiki](https://www.nesdev.org/wiki/Famicom_cartridge_dimensions)).
   Drag it up to unseat it and the contacts drop out one by one; drag sideways to tilt it.

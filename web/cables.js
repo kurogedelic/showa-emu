@@ -132,6 +132,7 @@ export function createCables(scene) {
 
     const cable = {
       name, pts, prev, seg, mesh, plug, from, to,
+      maxLen: seg * segments,          // これ以上は伸びない (張ると抜ける)
       connected: true, held: false, holdPos: new THREE.Vector3(),
     };
     plug.userData.cable = cable;
@@ -156,6 +157,19 @@ export function createCables(scene) {
       const head = socketWorld(c.from);
       c.pts[0].copy(head);
       c.prev[0].copy(head);
+
+      // 引っ張って伸びきったら抜ける (掴んでいるとき / 機材ごと引きずったとき)
+      const far = c.held ? c.holdPos : socketWorld(c.to);
+      const strain = _t.subVectors(far, head).length();
+      if (strain > c.maxLen) {
+        if (c.connected) {
+          c.connected = false;
+          if (onPull) onPull(c);
+        }
+        // 手で持っている先も、ケーブルの長さより先には行かせない
+        if (c.held) c.holdPos.copy(head).addScaledVector(_t.normalize(), c.maxLen);
+      }
+
       let tail = null;
       if (c.held) tail = c.holdPos;
       else if (c.connected) tail = socketWorld(c.to);
@@ -189,10 +203,10 @@ export function createCables(scene) {
     }
   }
 
-  // プラグを掴む -> 抜ける
+  // プラグを掴む。挿さったままなので、引っ張って伸びきると抜ける
+  let onPull = null;
   function grab(cable) {
     cable.held = true;
-    cable.connected = false;
     cable.holdPos.copy(cable.pts[cable.pts.length - 1]);
   }
   function moveTo(cable, p) { cable.holdPos.copy(p); }
@@ -209,5 +223,9 @@ export function createCables(scene) {
     return c ? c.connected : false;
   };
 
-  return { cables, sockets, plugMeshes, addSocket, addCable, update, grab, moveTo, release, isConnected, socketWorld };
+  return {
+    cables, sockets, plugMeshes, addSocket, addCable, update, grab, moveTo, release,
+    isConnected, socketWorld,
+    onPull: (fn) => { onPull = fn; },
+  };
 }
