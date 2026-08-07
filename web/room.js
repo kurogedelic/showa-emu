@@ -2039,6 +2039,8 @@ function bindPointer(canvas) {
       placeCartHud(e);
     } else if (what === 'famicom') {
       placeHudAt(fcHud.el, e);
+    } else if (what === 'crt') {
+      placeHudAt(hud.panel, e);
     }
   });
 
