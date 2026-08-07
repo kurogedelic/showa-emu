@@ -45,6 +45,7 @@
     sram: Module._nes_sram,
     sramSize: Module._nes_sram_size,
     hasBattery: Module._nes_has_battery,
+    setZapper: Module._nes_set_zapper,
   };
   window.__nes = { api, Module, frames: 0, getButtons: () => buttons };
 
@@ -200,6 +201,13 @@
     KeyX: 1, KeyZ: 2, ShiftRight: 4, ShiftLeft: 4, Enter: 8,
     ArrowUp: 16, ArrowDown: 32, ArrowLeft: 64, ArrowRight: 128,
   };
+  // 酔っぱらうと十字キーが逆になる (3D 側から設定)
+  let drunk = false;
+  const SWAP = { 16: 32, 32: 16, 64: 128, 128: 64 };
+  const keyBit = (code) => {
+    const b = KEYMAP[code];
+    return (drunk && SWAP[b]) ? SWAP[b] : b;
+  };
   function toggleFullscreen() {
     if (document.fullscreenElement) document.exitFullscreen();
     else document.getElementById('app').requestFullscreen().catch(() => {});
@@ -209,12 +217,12 @@
     if (e.code === 'KeyF' && !e.repeat) { toggleFullscreen(); e.preventDefault(); return; }
     if (e.code === 'KeyR' && !e.repeat) { setResetHold(true); e.preventDefault(); return; }
     if (e.code === 'KeyD' && !e.repeat) { document.getElementById('btn-debug').click(); e.preventDefault(); return; }
-    const bit = KEYMAP[e.code];
+    const bit = keyBit(e.code);
     if (bit) { buttons |= bit; e.preventDefault(); }
   });
   document.addEventListener('keyup', (e) => {
     if (e.code === 'KeyR') { setResetHold(false); e.preventDefault(); return; }
-    const bit = KEYMAP[e.code];
+    const bit = keyBit(e.code);
     if (bit) { buttons &= ~bit; e.preventDefault(); }
   });
 
@@ -436,7 +444,32 @@
     isPowered: () => powered,
     setResetHold,
     isResetHeld: () => resetHeld,
+    setDrunk: (v) => { drunk = !!v; },
+    isDrunk: () => drunk,
     getRomName: () => (romLoaded ? statusEl.textContent : ''),
+    // 光線銃。aim は画面内の正規化座標 (0-1)、外していれば null
+    setZapper(connected, trigger, aim) {
+      let light = 0;
+      if (connected && aim && powered) {
+        // 照準の先が明るいかを、いま表示しているフレームから判定する
+        const x = Math.max(0, Math.min(255, Math.round(aim.x * 256)));
+        const y = Math.max(0, Math.min(239, Math.round(aim.y * 240)));
+        const d = imageData.data;
+        let lum = 0, n = 0;
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            const px = x + dx, py = y + dy;
+            if (px < 0 || px > 255 || py < 0 || py > 239) continue;
+            const i = (py * 256 + px) * 4;
+            lum += d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+            n++;
+          }
+        }
+        if (n && lum / n > 96) light = 1;
+      }
+      api.setZapper(connected ? 1 : 0, trigger ? 1 : 0, light);
+      return light === 1;
+    },
     // 3D のファミコンに .nes をドロップしたとき: カセットを差し替える
     async swapCartridge(file) {
       let buf;

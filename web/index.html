@@ -925,6 +925,45 @@
     backdrop-filter: blur(3px);
   }
   #cart-hud.on { display: block; }
+  /* 飲酒ダイアログ */
+  #drink-modal {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 12;
+    background: rgba(0, 0, 0, 0.45);
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+  }
+  #drink-modal.on { display: flex; }
+  .dm-box {
+    width: min(320px, 84%);
+    background: #1b1b1b;
+    border: 3px solid var(--fc-red);
+    border-radius: 8px;
+    padding: 18px 18px 16px;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.7);
+  }
+  .dm-title { font-size: 15px; font-weight: bold; color: #f0e8d8; margin-bottom: 6px; }
+  .dm-note { font-size: 11px; color: #9a917f; margin-bottom: 16px; }
+  .dm-btns { display: flex; gap: 10px; justify-content: center; }
+  .dm-btn {
+    flex: 1 1 0;
+    background: #3a3a3a;
+    border: 1px solid #555;
+    border-radius: 5px;
+    color: #eee;
+    font: inherit;
+    font-size: 13px;
+    font-weight: bold;
+    padding: 8px 0;
+    cursor: pointer;
+  }
+  .dm-btn:hover { background: #4a4a4a; }
+  .dm-yes { background: var(--fc-red); border-color: var(--fc-red-dark); color: var(--fc-cream); }
+  .dm-yes:hover { background: #a52d2d; }
   /* ファミコンにホバーしたときの HUD */
   #fc-hud {
     display: none;
@@ -1198,6 +1237,17 @@
           <button id="rt-leak" class="rt-btn rt-icon" title="Leak">💧</button>
           <button id="rt-can" class="rt-btn rt-icon" title="Soda">🥤</button>
           <button id="rt-tarai" class="rt-btn rt-icon" title="Drop a washtub">🪣</button>
+            <button id="rt-zapper" class="rt-btn rt-icon" title="Zapper light gun">🔫</button>
+        </div>
+      </div>
+      <div id="drink-modal">
+        <div class="dm-box">
+          <div class="dm-title">飲酒を開始しますか？</div>
+          <div class="dm-note">一升瓶に手を伸ばした。</div>
+          <div class="dm-btns">
+            <button id="dm-yes" class="dm-btn dm-yes">はい</button>
+            <button id="dm-no" class="dm-btn">いいえ</button>
+          </div>
         </div>
       </div>
       <div id="fc-hud">
@@ -1321,15 +1371,15 @@ PRGとCHRを別のカセットから組み合わせた「ニコイチカセッ�
   </div>
   <button id="check-close">閉じる</button>
 </div>
-<script>window.NES_VER='1784862731';</script>
-<script src="i18n.js?v=1784862731"></script>
-<script src="smb-ram.js?v=1784862731"></script>
-<script src="layout.js?v=1784862731"></script>
+<script>window.NES_VER='1786073643';</script>
+<script src="i18n.js?v=1786073643"></script>
+<script src="smb-ram.js?v=1786073643"></script>
+<script src="layout.js?v=1786073643"></script>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/jsm/" } }
 </script>
-<script type="module" src="room.js?v=1784862731"></script>
-<script src="nes.js?v=1784862731"></script>
-<script src="main.js?v=1784862731"></script>
+<script type="module" src="room.js?v=1786073643"></script>
+<script src="nes.js?v=1786073643"></script>
+<script src="main.js?v=1786073643"></script>
 </body>
 </html>

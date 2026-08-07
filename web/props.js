@@ -286,6 +286,67 @@ export function createLeak(scene, { x, z, ceilingY }) {
   };
 }
 
+// ------------------------------------------------------------ 一升瓶 (1.8L)
+// 高さ 395mm / 胴径 105mm。緑がかった茶色のガラスに白いラベル
+export function createBottle(scene, pos) {
+  const H = 0.395, R = 0.0525;
+  const g = new THREE.Group();
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: 0x2f4326, roughness: 0.12, metalness: 0, transmission: 0.55,
+    thickness: 0.02, transparent: true, opacity: 0.95,
+  });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(R, R, H * 0.66, 24), glass);
+  body.position.y = H * 0.33;
+  body.castShadow = true;
+  g.add(body);
+  // 肩から首へ
+  const shoulder = new THREE.Mesh(new THREE.CylinderGeometry(0.016, R, H * 0.16, 24), glass);
+  shoulder.position.y = H * 0.74;
+  g.add(shoulder);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.016, H * 0.18, 20), glass);
+  neck.position.y = H * 0.91;
+  g.add(neck);
+  const cap = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.017, 0.017, 0.022, 20),
+    new THREE.MeshStandardMaterial({ color: 0xc9a64b, roughness: 0.35, metalness: 0.6 })
+  );
+  cap.position.y = H - 0.008;
+  g.add(cap);
+
+  // ラベル
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const x = c.getContext('2d');
+  x.fillStyle = '#f2ece0';
+  x.fillRect(0, 0, 256, 256);
+  x.strokeStyle = '#8f2323';
+  x.lineWidth = 6;
+  x.strokeRect(10, 10, 236, 236);
+  x.fillStyle = '#1d1a15';
+  x.font = 'bold 76px serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.fillText('清酒', 128, 96);
+  x.fillStyle = '#8f2323';
+  x.font = 'bold 30px serif';
+  x.fillText('一 升 瓶', 128, 168);
+  x.fillStyle = '#4a443a';
+  x.font = '20px serif';
+  x.fillText('1800ml  15%', 128, 210);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const label = new THREE.Mesh(
+    new THREE.CylinderGeometry(R * 1.005, R * 1.005, 0.12, 24, 1, true),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 })
+  );
+  label.position.y = H * 0.33;
+  g.add(label);
+
+  g.position.copy(pos);
+  scene.add(g);
+  return { object: g, height: H, radius: R };
+}
+
 // ------------------------------------------------------------------ たらい
 // 天井から降ってくるやつ。直径 500 x 高さ 170mm のブリキのたらい
 export function createTarai(scene) {

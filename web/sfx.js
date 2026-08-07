@@ -117,6 +117,23 @@ export const sfx = {
     tone(90, 0.5, { gain: 0.24, type: 'sine', to: 45 });
     tone(140, 0.35, { gain: 0.14, type: 'square', to: 60, delay: 0.08 });
   },
+  // 光線銃の発射音
+  zap() {
+    tone(1400, 0.09, { gain: 0.2, type: 'square', to: 180 });
+    noise(0.07, { gain: 0.18, freq: 3200, q: 0.8, sweepTo: 600 });
+  },
+  // 実弾の発砲音
+  gunshot() {
+    noise(0.22, { gain: 0.4, type: 'lowpass', freq: 4200, q: 0.6, sweepTo: 260 });
+    tone(160, 0.14, { gain: 0.3, type: 'square', to: 55 });
+  },
+  // 一升瓶をあおる
+  gulp() {
+    [0, 0.28, 0.56].forEach((d) => {
+      tone(150 + Math.random() * 60, 0.11, { gain: 0.16, type: 'sine', to: 90, delay: d });
+      noise(0.06, { gain: 0.1, freq: 700, q: 1.5 });
+    });
+  },
   // 缶を置く
   can() { noise(0.06, { gain: 0.2, freq: 900, q: 2 }); tone(660, 0.09, { gain: 0.1, type: 'triangle', to: 380 }); },
 };

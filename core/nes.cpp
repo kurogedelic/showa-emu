@@ -85,7 +85,16 @@ uint8_t NES::cpuReadBus(uint16_t addr) {
     if (addr < 0x4000) return ppu.readReg(addr);
     if (addr == 0x4015) return apu.readStatus();
     if (addr == 0x4016) return pad[0].read();
-    if (addr == 0x4017) return pad[1].read();
+    if (addr == 0x4017) {
+        if (zapperOn) {
+            // 2P ポートに光線銃。下位ビットは接続なしと同じ 0x40 を返す
+            uint8_t v = 0x40;
+            if (zapperTrigger) v |= 0x08;
+            if (!zapperLight)  v |= 0x10;   // 光を検出していない = bit4 が立つ
+            return v;
+        }
+        return pad[1].read();
+    }
     if (addr < 0x4020) return 0;
     if (!mapper) return 0;
     // cartridge access through the (possibly faulty) connector
@@ -371,6 +380,14 @@ API int nes_has_expansion_audio() {
 }
 API uint8_t* nes_chan_buffer(int ch) {
     return (g_nes && ch >= 0 && ch < 8) ? g_nes->apu.chanBuf[ch] : nullptr;
+}
+
+// 光線銃: connected=挿しているか, trigger=引き金, light=照準の先が明るいか
+API void nes_set_zapper(int connected, int trigger, int light) {
+    if (!g_nes) return;
+    g_nes->zapperOn = connected != 0;
+    g_nes->zapperTrigger = trigger != 0;
+    g_nes->zapperLight = light != 0;
 }
 
 API int nes_has_battery() {

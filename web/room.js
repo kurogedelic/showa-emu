@@ -8,9 +8,12 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as CANNON from './vendor/cannon-es.js';
-import { createCables } from './cables.js';
-import { createRoach, createLeak, createCan, createTarai } from './props.js';
-import { sfx } from './sfx.js';
+// 自作モジュールは index.html と同じ版数を付けて読む (付けないと古いのが残る)
+const _ver = window.NES_VER ? '?v=' + window.NES_VER : '';
+const { createCables } = await import('./cables.js' + _ver);
+const { createRoach, createLeak, createCan, createTarai, createBottle } =
+  await import('./props.js' + _ver);
+const { sfx } = await import('./sfx.js' + _ver);
 
 const MODEL_DIR = './assets/models/';
 // 差し替え可能なモデル: ファイル名 -> 仮モデルのプレースホルダ名
@@ -24,6 +27,8 @@ let renderer, scene, camera, controls, screenTex, screenMesh;
 let cassetteGroup, running = false, started = false;
 let standItem = null, crtItem = null, famItem = null, cartItem = null, convItem = null, canItem = null;
 let cables = null, roach = null, leak = null, can = null, tarai = null, taraiItem = null;
+let bottle = null, bottleItem = null;
+let drunk = 0;            // 酔い 0..1 (時間でさめる)
 const roaches = [];
 const ROACH_MAX = 16;
 
@@ -514,6 +519,8 @@ if (tidyBtn) {
     juiceFault = 0;
     if (cables) for (const c of cables.cables) { c.held = false; c.connected = true; }
     if (tarai) tarai.object.visible = false;
+    drunk = 0;
+    if (window.NES_UI && window.NES_UI.setDrunk) window.NES_UI.setDrunk(false);
   });
 }
 
@@ -572,11 +579,28 @@ if (taraiBtn) {
   });
 }
 
+const zapperBtn = document.getElementById('rt-zapper');
+if (zapperBtn) {
+  zapperBtn.addEventListener('click', () => {
+    setZapperMode(!zapper.on);
+    zapperBtn.classList.toggle('on', zapper.on);
+    if (zapper.on && spray.on) {   // スプレーとは排他
+      setSprayMode(false);
+      const sb = document.getElementById('rt-spray');
+      if (sb) sb.classList.remove('on');
+    }
+  });
+}
+
 const sprayBtn = document.getElementById('rt-spray');
 if (sprayBtn) {
   sprayBtn.addEventListener('click', () => {
     setSprayMode(!spray.on);
     sprayBtn.classList.toggle('on', spray.on);
+    if (spray.on && zapper.on) {
+      setZapperMode(false);
+      if (zapperBtn) zapperBtn.classList.remove('on');
+    }
   });
 }
 
@@ -1559,6 +1583,179 @@ function updateSpray(dt) {
   }
 }
 
+// ------------------------------------------------------------------ 飲酒
+// 一升瓶をクリックするとダイアログ。飲むと視界が歪んで十字キーが逆になる。
+const drinkModal = document.getElementById('drink-modal');
+let baseFov = 45;
+
+function openDrinkModal() {
+  if (drinkModal) drinkModal.classList.add('on');
+}
+function closeDrinkModal() {
+  if (drinkModal) drinkModal.classList.remove('on');
+}
+function startDrinking() {
+  drunk = Math.min(1, drunk + 0.55);
+  if (window.NES_UI && window.NES_UI.setDrunk) window.NES_UI.setDrunk(true);
+  sfx.gulp();
+  closeDrinkModal();
+}
+{
+  const yes = document.getElementById('dm-yes');
+  const no = document.getElementById('dm-no');
+  if (yes) yes.addEventListener('click', startDrinking);
+  if (no) no.addEventListener('click', closeDrinkModal);
+  if (drinkModal) drinkModal.addEventListener('click', (e) => {
+    if (e.target === drinkModal) closeDrinkModal();
+  });
+}
+
+// 酔いを画にする: 画角が伸び縮みして、カメラがゆっくり傾く
+function updateDrunk(dt, now) {
+  if (!camera) return;
+  if (drunk > 0) {
+    drunk = Math.max(0, drunk - dt / 90);      // 90 秒くらいでさめる
+    if (drunk <= 0 && window.NES_UI && window.NES_UI.setDrunk) window.NES_UI.setDrunk(false);
+  }
+  const t = now / 1000;
+  const k = drunk;
+  camera.fov = baseFov + Math.sin(t * 0.9) * 9 * k + Math.sin(t * 2.3) * 3 * k;
+  camera.rotation.z = Math.sin(t * 0.6) * 0.10 * k + Math.sin(t * 1.7) * 0.03 * k;
+  camera.updateProjectionMatrix();
+}
+
+// ------------------------------------------------------------ 光線銃 (Zapper)
+// 2P ポートの光線銃。ブラウン管を狙って撃つと、コアが $4017 の受光ビットで判定する。
+const zapper = { on: false, gun: null, trigger: 0, aim: null, flash: 0 };
+
+function buildZapper() {
+  const g = new THREE.Group();
+  const gray = new THREE.MeshStandardMaterial({ color: 0xd8d3c4, roughness: 0.5 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x2b2622, roughness: 0.55 });
+  const red = new THREE.MeshStandardMaterial({ color: 0x8f2323, roughness: 0.45 });
+
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.021, 0.15, 16), gray);
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.z = 0.055;
+  g.add(barrel);
+  const body = new THREE.Mesh(roundedBox(0.036, 0.055, 0.10, 0.008), gray);
+  body.position.set(0, -0.012, -0.03);
+  g.add(body);
+  const grip = new THREE.Mesh(roundedBox(0.032, 0.085, 0.042, 0.008), red);
+  grip.position.set(0, -0.062, -0.055);
+  grip.rotation.x = -0.28;
+  g.add(grip);
+  const guard = new THREE.Mesh(new THREE.TorusGeometry(0.017, 0.004, 6, 14, Math.PI), dark);
+  guard.rotation.y = Math.PI / 2;
+  guard.position.set(0, -0.042, -0.018);
+  g.add(guard);
+  const trig = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.018, 0.005), dark);
+  trig.position.set(0, -0.036, -0.022);
+  trig.name = 'trigger';
+  g.add(trig);
+  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.006, 14), dark);
+  muzzle.rotation.x = Math.PI / 2;
+  muzzle.position.z = 0.131;
+  g.add(muzzle);
+  return g;
+}
+
+function initZapper() {
+  zapper.gun = buildZapper();
+  zapper.gun.visible = false;
+  scene.add(zapper.gun);
+}
+
+function setZapperMode(on) {
+  zapper.on = on;
+  if (zapper.gun) zapper.gun.visible = on;
+  if (renderer) renderer.domElement.style.cursor = on ? 'crosshair' : '';
+  if (!on && window.NES_UI) window.NES_UI.setZapper(false, false, null);
+}
+
+// カーソルの先に銃を構える
+function aimZapper(origin, dir) {
+  if (!zapper.gun) return;
+  zapper.gun.position.copy(origin).addScaledVector(dir, 0.32);
+  const right = new THREE.Vector3().crossVectors(dir, _aimUp).normalize();
+  const down = new THREE.Vector3().crossVectors(right, dir).normalize();
+  zapper.gun.position.addScaledVector(right, 0.085).addScaledVector(down, -0.085);
+  zapper.gun.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+  zapper.gun.rotateX(0.12);
+}
+
+// 実弾。右クリックで飛んでいって、当たったものを吹き飛ばす
+const bullets = [];
+const BULLET_R = 0.007;
+
+function initBullets() {
+  const geo = new THREE.SphereGeometry(BULLET_R, 8, 6);
+  const mat = new THREE.MeshStandardMaterial({ color: 0xb08d3a, roughness: 0.3, metalness: 0.9 });
+  for (let i = 0; i < 12; i++) {
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.visible = false;
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const body = new CANNON.Body({
+      mass: 0.12, shape: new CANNON.Sphere(BULLET_R),
+      type: CANNON.Body.DYNAMIC, allowSleep: false,
+    });
+    body.collisionResponse = true;
+    phys.world.addBody(body);
+    const b = { mesh, body, life: 0 };
+    body.addEventListener('collide', (e) => {
+      if (b.life <= 0) return;
+      const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
+      if (v > 1) sfx.thud(Math.min(1, v / 8));
+    });
+    bullets.push(b);
+    body.sleep();
+  }
+}
+
+function fireBullet(origin, dir) {
+  const b = bullets.find((x) => x.life <= 0);
+  if (!b) return;
+  b.life = 5;
+  b.mesh.visible = true;
+  b.body.wakeUp();
+  b.body.position.set(origin.x, origin.y, origin.z);
+  b.body.velocity.set(dir.x * 14, dir.y * 14 + 0.4, dir.z * 14);
+  b.body.angularVelocity.set(0, 0, 0);
+  sfx.gunshot();
+  // 弾道の近くにいるゴキブリは即死
+  const v = new THREE.Vector3();
+  for (const r of roaches) {
+    if (!r.state.alive || r.state.dying) continue;
+    v.copy(r.object.position).sub(origin);
+    const along = v.dot(dir);
+    if (along < 0 || along > 6) continue;
+    if (v.addScaledVector(dir, -along).length() < 0.05) r.kill();
+  }
+}
+
+function updateBullets(dt) {
+  for (const b of bullets) {
+    if (b.life <= 0) continue;
+    b.life -= dt;
+    b.mesh.position.set(b.body.position.x, b.body.position.y, b.body.position.z);
+    if (b.life <= 0) {
+      b.mesh.visible = false;
+      b.body.velocity.setZero();
+      b.body.position.set(0, -5, 0);
+      b.body.sleep();
+    }
+  }
+}
+
+// 照準がブラウン管のどこを指しているか (0-1)。外していれば null
+function zapperAim(ray) {
+  if (!screenMesh) return null;
+  const h = ray.intersectObject(screenMesh, false);
+  if (!h.length || !h[0].uv) return null;
+  return { x: h[0].uv.x, y: 1 - h[0].uv.y };
+}
+
 // ------------------------------------------- カセットのドラッグ + 傾きゲージ HUD
 const TILT_MAX = 6;
 
@@ -1668,7 +1865,8 @@ function bindPointer(canvas) {
     consider(cassetteGroup, 'cart', {}, 0.10);
     for (const it of phys.items) {
       if (it.isWall || it.obj === cassetteGroup) continue;   // 壁は掴めない (ぶつけて倒すだけ)
-      const what = it === crtItem ? 'crt' : (it === famItem ? 'famicom' : 'thing');
+      const what = it === crtItem ? 'crt'
+        : (it === famItem ? 'famicom' : (it === bottleItem ? 'bottle' : 'thing'));
       consider(it.obj, what, { item: it });
     }
     return best;
@@ -1708,6 +1906,17 @@ function bindPointer(canvas) {
   };
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (zapper.on) {
+      // 光線銃: 引き金を引いている間だけトリガー ON
+      setNdc(e);
+      aimZapper(ray.ray.origin, ray.ray.direction);
+      zapper.aim = zapperAim(ray);
+      zapper.trigger = 1;
+      zapper.flash = 1;
+      sfx.zap();
+      canvas.setPointerCapture(e.pointerId);
+      return;
+    }
     if (spray.on) {
       // スプレーモード: ノズルの先から照準方向へ噴射
       setNdc(e);
@@ -1727,6 +1936,10 @@ function bindPointer(canvas) {
     }
     if (hit.what === 'roach') {
       hit.roach.scare();
+      return;
+    }
+    if (hit.what === 'bottle' && !phys.enabled) {
+      openDrinkModal();
       return;
     }
     if (hit.what === 'plug') {
@@ -1799,6 +2012,12 @@ function bindPointer(canvas) {
       aimSpray(ray.ray.origin, ray.ray.direction);
       return;
     }
+    if (zapper.on) {
+      setNdc(e);
+      aimZapper(ray.ray.origin, ray.ray.direction);
+      zapper.aim = zapperAim(ray);
+      return;
+    }
     if (mode === 'cart') {
       // 横 = 傾ける / 縦 = 抜き差し (大きく動いた方を採用)
       const dx = e.clientX - startX, dy = e.clientY - startY;
@@ -1824,6 +2043,7 @@ function bindPointer(canvas) {
   });
 
   const end = () => {
+    zapper.trigger = 0;
     if (mode === 'plug' && grabbedCable) {
       const wasIn = cables.release(grabbedCable);
       if (wasIn) sfx.plug();
@@ -1840,6 +2060,16 @@ function bindPointer(canvas) {
     controls.enabled = true;
     canvas.style.cursor = hovering ? 'grab' : '';
   };
+  // 右クリック: 実弾を撃つ (光線銃モードのときだけ)
+  canvas.addEventListener('contextmenu', (e) => {
+    if (!zapper.on) return;
+    e.preventDefault();
+    setNdc(e);
+    aimZapper(ray.ray.origin, ray.ray.direction);
+    const muzzle = new THREE.Vector3(0, 0, 0.14)
+      .applyQuaternion(zapper.gun.quaternion).add(zapper.gun.position);
+    fireBullet(muzzle, ray.ray.direction.clone());
+  });
   canvas.addEventListener('pointerup', end);
   canvas.addEventListener('pointercancel', end);
   canvas.addEventListener('pointerleave', () => {
@@ -2012,6 +2242,15 @@ function init() {
   can = createCan(scene, new THREE.Vector3(0.62, 0.004, TV_Z + 0.80));
   canItem = addPhysicsItem(can.object, V3(0.066, can.height, 0.066), V3(0, can.height / 2, 0), 0.38);
 
+  // 一升瓶 (ジュースの横)
+  bottle = createBottle(scene, new THREE.Vector3(0.75, 0.004, TV_Z + 0.86));
+  bottle.object.name = 'bottle';
+  bottleItem = addPhysicsItem(
+    bottle.object,
+    V3(bottle.radius * 2, bottle.height, bottle.radius * 2),
+    V3(0, bottle.height / 2, 0), 1.9
+  );
+
   // たらい (天井から降ってくる)
   tarai = createTarai(scene);
   tarai.object.name = 'tarai';
@@ -2048,6 +2287,8 @@ function init() {
   controls.update();
 
   initSpray();
+  initZapper();
+  initBullets();
   bindPointer(renderer.domElement);
   // 既定で掴めるようにしておく
   setPhysicsEnabled(true);
@@ -2057,6 +2298,8 @@ function init() {
     THREE, CANNON, renderer, scene, camera, controls, placeholders, drawOsd,
     material: () => screenMat, phys, setInsertion, getInsertion: () => insertion,
     cables, roaches, leak, can, spawnRoach, spray, doSpray, setSprayMode, sfx,
+    zapper, setZapperMode, zapperAim, bullets, fireBullet,
+    openDrinkModal, startDrinking, getDrunk: () => drunk,
   };
   resize();
   new ResizeObserver(resize).observe(wrap);
@@ -2114,6 +2357,8 @@ function loop() {
   syncCablePower();
   for (const r of roaches) r.update(dt);
   updateSpray(dt);
+  updateBullets(dt);
+  updateDrunk(dt, now);
   if (leak) leak.update(dt);
   if (can) {
     can.update(dt);
@@ -2157,6 +2402,12 @@ function loop() {
       drawCartLabel(cartLabelText);
     }
   }
+  // 光線銃の状態をコアへ (受光判定は 2D 側がフレームバッファを見る)
+  if (window.NES_UI && window.NES_UI.setZapper) {
+    window.NES_UI.setZapper(zapper.on, zapper.trigger === 1, zapper.on ? zapper.aim : null);
+  }
+  if (zapper.flash > 0) zapper.flash = Math.max(0, zapper.flash - dt * 6);
+
   drawOsd(q, osdFps);
   // HUD が出ている間は 2D 側の操作にも追従させる
   if (cartHud.el && cartHud.el.classList.contains('on')) updateCartHud(tilt);

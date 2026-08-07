@@ -281,6 +281,12 @@ public:
     PPU ppu;
     APU apu;
     Controller pad[2];
+
+    // ---- Zapper (光線銃, 2P ポート $4017) ----
+    // bit3 = トリガー(引くと 1) / bit4 = 受光していないとき 1 (実機と同じ極性)
+    bool zapperOn = false;      // 銃を挿しているか
+    bool zapperTrigger = false;
+    bool zapperLight = false;   // 照準の先が明るいか (JS 側が毎フレーム教える)
     std::unique_ptr<Mapper> mapper;
     uint8_t ram[0x800] = {};
     uint8_t apuRegShadow[0x18] = {};   // last value written to $4000-$4017 (debug view)

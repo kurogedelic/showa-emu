@@ -28,6 +28,9 @@ bundled in this repo. Use **Open ROM** in the toolbar to load your own `.nes` fi
   picture warp and settle; a knock to the console makes the contacts bounce and the game glitch.
   Throw something hard enough at a wall and the wall falls over, Drifters-style — behind it is just
   blue sky.
+- **A working Zapper.** The light gun is implemented in the core — `$4017` returns the trigger and
+  light-sense bits, and the JS side samples the framebuffer where you are aiming, so real light gun
+  games actually respond. Right-click fires a physical pellet that knocks things over.
 - **Room props.** Cockroaches that scuttle across the floor *and up the walls* (one more per click,
   and a can of bug spray to deal with them), a ceiling leak, and a can of orange soda you can knock
   over — the puddle reaching the console gums up the contacts.
@@ -41,7 +44,9 @@ Hover the **television** for its own settings (UHF gain, tuning, CRT effect, OSD
 Hover the **console** for power, reset and the loaded ROM — drop a `.nes` file on it to swap the
 cartridge. Hover the **cartridge** for a tilt and contact gauge. The overlay at the bottom left has
 power, reset, grab mode, tidy up, the room light, and the prop palette (roach, bug spray, ceiling
-leak, soda can, falling washtub). Drag anywhere else to orbit.
+leak, soda can, falling washtub, light gun). Drag anywhere else to orbit. There is also a bottle of
+sake on the floor; clicking it asks whether you would like to start drinking, and saying yes warps
+the field of view and reverses the D-pad until you sober up.
 
 The original 2D interface is still reachable: `?room=0` gives you the plain emulator with its
 toolbar and 60-pin connector panel. In 3D, the debug panels are still there — scroll left and right.
