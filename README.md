@@ -1,56 +1,42 @@
 # showa-emu
 
-A Famicom emulator that runs inside a **Shōwa-era living room**: a CRT television on a stand in a
-eight-mat tatami room, with a console, an RF switch box, cables you can actually unplug, and physics.
+**A Famicom emulator inside a simulated Shōwa-era Japanese living room.**
+
+▶ **Play:** https://kurogedelic.github.io/showa-emu/  
+日本語: [README.ja.md](README.ja.md)
+
+`showa-emu` starts with a real Famicom emulator and extends the emulation beyond the console itself: CRT/RF behaviour, cartridge contacts, cables, furniture, room physics, and assorted household disasters are all part of the simulation.
+
 Forked from [GOROman/cluade-famicom-emu](https://github.com/GOROman/cluade-famicom-emu).
 
-**▶ Play: https://kurogedelic.github.io/showa-emu/**
+The bundled default ROM, `nobunaga.nes`, is an original game by [kurogedelic](https://github.com/kurogedelic). You can also load your own `.nes` file from the browser.
 
-It boots straight into *nobunaga.nes*, an original game by [kurogedelic](https://github.com/kurogedelic),
-bundled in this repo. Use **Open ROM** in the toolbar to load your own `.nes` file.
+## The idea
 
-## What this fork adds
+Most emulators reproduce the machine. **showa-emu tries to reproduce the situation around the machine.**
 
-- **NTSC / RF simulation.** The picture is encoded onto a colour subcarrier and demodulated again in
-  the shader. Chroma is band-limited, luma is recovered with a comb filter so it stays sharp. Dot
-  crawl, colour bleed, ghosting, colour-killer, snow and sync tearing all fall out of the model.
-- **On-screen display** in the style of
-  [famicom-rf-hackrf-decoder](https://github.com/GOROman/famicom-rf-hackrf-decoder) — CH1, V-SYNC /
-  H-SYNC lock, FPS, carrier frequencies, latency. The OSD goes through the CRT effects too.
-- **Cables you can unplug.** RF (console → RF switch → TV), the TV's mains lead and the Famicom's AC
-  adapter, simulated as Verlet ropes with a real length — pull a plug (or drag the set across the
-  room) and it comes out of the socket when the cable goes taut. Pull the RF and you get snow; pull
-  the mains and the tube goes dark; pull the adapter and the console powers off.
-- **A real cartridge.** 109.5 × 70 × 17 mm shell, 90 × 46.1 mm board, 60 pads on a 2.54 mm pitch
-  (dimensions from the [NESdev Wiki](https://www.nesdev.org/wiki/Famicom_cartridge_dimensions)).
-  Drag it up to unseat it and the contacts drop out one by one; drag sideways to tilt it.
-- **Physics** (cannon-es). Grab and throw the television, the stand, the console. Knocks make the
-  picture warp and settle; a knock to the console makes the contacts bounce and the game glitch.
-  Throw something hard enough at a wall and the wall falls over, Drifters-style — behind it is just
-  blue sky.
-- **A working Zapper.** The light gun is implemented in the core — `$4017` returns the trigger and
-  light-sense bits, and the JS side samples the framebuffer where you are aiming, so real light gun
-  games actually respond. Hold the right button and it fires a continuous beam that shoves whatever it lands on
-  (and fries any cockroach it crosses).
-- **Room props.** Cockroaches that scuttle across the floor *and up the walls* (one more per click,
-  and a can of bug spray to deal with them), a ceiling leak, and a can of orange soda you can knock
-  over — the puddle reaching the console gums up the contacts.
+The Famicom sits in an eight-mat tatami room with a CRT television and RF switch box. Connections can fail physically, the cartridge can lose contact, objects have mass, and the television signal behaves like an analogue television signal rather than a clean framebuffer.
 
-Everything in the room is generated in code. Drop a glTF into `web/assets/models/` to replace any of
-it — see [the notes there](web/assets/models/README.md).
+## What it simulates
+
+- **NTSC / RF video** — colour subcarrier encode/decode, band-limited chroma, comb-filtered luma, dot crawl, colour bleed, ghosting, colour killer, snow and sync tearing.
+- **CRT presentation** — emulator output and the diagnostic OSD pass through the television effects together.
+- **Physical cables** — RF, TV mains and the Famicom AC adapter are simulated as finite-length Verlet ropes. Pull them taut and the plugs come out.
+- **Famicom cartridge contacts** — the cartridge has a 109.5 × 70 × 17 mm shell, a 90 × 46.1 mm board and 60 contacts on a 2.54 mm pitch. Pull or tilt it and contacts disconnect progressively.
+- **Room physics** — powered by `cannon-es`. The television, stand and console can be grabbed, moved and thrown. Impacts can disturb the picture or cartridge contacts.
+- **A working Zapper** — the core implements the `$4017` trigger/light-sense behaviour and the browser side samples the framebuffer at the aim point, so compatible light-gun games can respond.
+- **Unreasonable extensions** — walls can fall over; cockroaches roam the room; bug spray exists; the ceiling can leak; orange soda can reach the console and foul the cartridge contacts; the Zapper can emit a continuous beam that pushes objects and produces smoke.
+- **Sake** — drinking it temporarily warps the field of view and reverses the D-pad.
+
+Everything in the room is generated in code by default. Optional glTF/GLB models can replace generated objects; see [`web/assets/models/README.md`](web/assets/models/README.md).
 
 ## Controls
 
-Hover the **television** for its own settings (UHF gain, tuning, CRT effect, OSD, mute).
-Hover the **console** for power, reset and the loaded ROM — drop a `.nes` file on it to swap the
-cartridge. Hover the **cartridge** for a tilt and contact gauge. The overlay at the bottom left has
-power, reset, grab mode, tidy up, the room light, and the prop palette (roach, bug spray, ceiling
-leak, soda can, falling washtub, light gun). Drag anywhere else to orbit; middle-drag pans. There is also a bottle of
-sake on the floor; clicking it asks whether you would like to start drinking, and saying yes warps
-the field of view and reverses the D-pad until you sober up.
+Hover the **television** for tuning, UHF gain, CRT, OSD and audio controls.  
+Hover the **console** for power, reset and ROM controls. A `.nes` file can also be dropped onto it.  
+Hover the **cartridge** to inspect tilt and contact state.
 
-The original 2D interface is still reachable: `?room=0` gives you the plain emulator with its
-toolbar and 60-pin connector panel. In 3D, the debug panels are still there — scroll left and right.
+The lower-left overlay provides power, reset, grab mode, tidy-up, room lighting and props. Drag elsewhere to orbit the camera; middle-drag pans.
 
 | NES | Keyboard | Gamepad |
 |---|---|---|
@@ -58,28 +44,56 @@ toolbar and 60-pin connector panel. In 3D, the debug panels are still there — 
 | A / B | X / Z | Right / bottom button |
 | Start / Select | Enter / Shift | Start / Select |
 
-Hotkeys: **F** fullscreen · **R** reset (held) · **D** debug panel.
-URL parameters: `?room=0` for the plain 2D view, plus `rom=`, `debug=1`, `pin=0`, `clock=`, `tilt=`,
-`break=`, `mute=1`, `vol=`, `lang=`.
+Hotkeys: **F** fullscreen · **R** reset (held) · **D** debug panel
+
+Useful URL parameters include:
+
+- `?room=0` — original 2D emulator interface
+- `rom=` — ROM selection
+- `debug=1` — debug UI
+- `pin=0`, `clock=`, `tilt=`, `break=` — fault/debug controls
+- `mute=1`, `vol=` — audio
+- `lang=` — language
+
+## Architecture
+
+```text
+core/                 C++ Famicom emulator core
+  └─ nes.cpp / nes.h  CPU / PPU / APU integration + Zapper support
+
+web/
+  ├─ main.js           emulator/browser integration
+  ├─ room.js           Shōwa room, rendering, interaction and physics
+  ├─ props.js          room props and incidents
+  ├─ cables.js         physical cable simulation
+  ├─ sfx.js            room sound effects
+  ├─ layout.js         room/layout helpers
+  ├─ audio-worklet.js  APU playback
+  ├─ nes.js / nes.wasm Emscripten output
+  └─ vendor/           three.js + cannon-es dependencies
+```
+
+The emulator core is compiled from C++ to WebAssembly with Emscripten. The 3D layer uses plain ES modules, `three.js` and `cannon-es`; it has no separate bundling step.
 
 ## Build
 
-The emulator core is C++ compiled to WebAssembly with Emscripten:
-
 ```sh
-./build.sh          # → web/nes.js + web/nes.wasm
-cd web && python3 -m http.server 8765
+./build.sh
+cd web
+python3 -m http.server 8765
 ```
 
-The 3D layer is plain ES modules; there is no build step for it.
+Then open `http://localhost:8765/`.
 
 ## Credits
 
-The emulator — the 6502/PPU/APU core, the 60-pin fault model, the oscilloscope, the debugger — is
-[GOROman](https://github.com/GOROman)'s work. This fork only adds the room around it. See the
-[original repository](https://github.com/GOROman/cluade-famicom-emu) for the full documentation
-([日本語](https://github.com/GOROman/cluade-famicom-emu/blob/main/README.ja.md) ·
-[中文](https://github.com/GOROman/cluade-famicom-emu/blob/main/README.zh.md)).
+The original **6502 / PPU / APU emulator core, 60-pin fault model, oscilloscope and debugger** are the work of [GOROman](https://github.com/GOROman). See [GOROman/cluade-famicom-emu](https://github.com/GOROman/cluade-famicom-emu) for the original project and documentation.
 
-Bundled libraries: [three.js](https://threejs.org/) r180 and [cannon-es](https://github.com/pmndrs/cannon-es) 0.20, both MIT.
-`web/assets/roms/nobunaga.nes` is © kurogedelic. Everything else is MIT, as in the original.
+This fork adds the Shōwa room, physical environment and related simulation around that emulator.
+
+Bundled libraries:
+
+- [three.js](https://threejs.org/) r180 — MIT
+- [cannon-es](https://github.com/pmndrs/cannon-es) 0.20 — MIT
+
+`web/assets/roms/nobunaga.nes` is © kurogedelic. The rest of this repository follows the MIT license unless otherwise noted.
